@@ -4,10 +4,10 @@ import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.doubles.shouldBeGreaterThan
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
+import java.util.concurrent.atomic.AtomicBoolean
 
 class BudgetCircuitBreakerTest {
 
@@ -42,17 +42,17 @@ class BudgetCircuitBreakerTest {
 
     @Test
     fun `fires callback on soft limit`() = runTest {
-        var callbackFired = false
+        val callbackFired = AtomicBoolean(false)
         val breaker = BudgetCircuitBreaker(
             budget,
-            onSoftLimit = { callbackFired = true },
+            onSoftLimit = { callbackFired.set(true) },
         )
 
         breaker.withBudget("agent-1") {
             trackCall(promptTokens = 500, completionTokens = 350)
         }
 
-        callbackFired shouldBe true
+        callbackFired.get() shouldBe true
     }
 
     @Test
