@@ -1,0 +1,8 @@
+{
+  "project_name": "budget-breaker",
+  "workspace": "05-budget-breaker",
+  "workflow": {
+    "discuss_mode": "discuss",
+    "text_mode": false
+  }
+}
