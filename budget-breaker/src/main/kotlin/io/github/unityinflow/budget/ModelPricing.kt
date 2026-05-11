@@ -1,4 +1,4 @@
-package dev.unityinflow.budget
+package io.github.unityinflow.budget
 
 /**
  * Estimates LLM API costs based on token usage.

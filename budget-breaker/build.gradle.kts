@@ -1,5 +1,6 @@
 plugins {
     kotlin("jvm")
+    id("budget-breaker.publishing")
 }
 
 dependencies {
@@ -16,4 +17,19 @@ tasks.test {
 
 kotlin {
     jvmToolchain(21)
+}
+
+publishing {
+    publications {
+        named<MavenPublication>("maven") {
+            pom {
+                name.set("budget-breaker")
+                description.set(
+                    "Reactive, coroutine-aware circuit breaker for AI agent token budgets. " +
+                        "Enforces soft and hard token limits with clean coroutine cancellation " +
+                        "and cost estimation across Claude/GPT/Gemini models.",
+                )
+            }
+        }
+    }
 }

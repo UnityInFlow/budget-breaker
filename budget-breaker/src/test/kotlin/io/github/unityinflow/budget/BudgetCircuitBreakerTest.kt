@@ -1,4 +1,4 @@
-package dev.unityinflow.budget
+package io.github.unityinflow.budget
 
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.doubles.shouldBeGreaterThan

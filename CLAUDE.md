@@ -6,7 +6,7 @@
 
 Reactive, coroutine-aware circuit breaker for AI agent token budgets. Enforces soft and hard token limits with clean coroutine cancellation, cost estimation across Claude/GPT/Gemini models, and Micrometer metrics integration. The first Kotlin library in the ecosystem.
 
-**Phase:** 2 | **Stack:** Kotlin | **Maven:** `dev.unityinflow:budget-breaker`
+**Phase:** 2 | **Stack:** Kotlin | **Maven:** `io.github.unityinflow:budget-breaker`
 
 ## Status
 
@@ -40,7 +40,7 @@ Read these before making architectural or scope decisions.
 - No `var` — always `val`, refactor if mutation seems needed
 - No `!!` without a comment explaining why it's safe
 - `ktlint` before every commit
-- Group: `dev.unityinflow`
+- Group: `io.github.unityinflow`
 - Maven Central publishing via Sonatype
 
 ### General
@@ -61,7 +61,7 @@ Read these before making architectural or scope decisions.
 - [ ] Micrometer metrics integration
 - [ ] Unit tests: cancellation, soft limit, hard limit, report accuracy
 - [ ] Zero overhead on happy path (<1ms)
-- [ ] Published to Maven Central as `dev.unityinflow:budget-breaker`
+- [ ] Published to Maven Central as `io.github.unityinflow:budget-breaker`
 - [ ] README with problem statement, installation, 3 usage examples
 
 ## Development Workflow

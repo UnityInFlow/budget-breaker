@@ -79,7 +79,7 @@ Create `gradle.properties`:
 ```properties
 kotlin.code.style=official
 org.gradle.jvmargs=-Xmx1g
-group=dev.unityinflow
+group=io.github.unityinflow
 version=0.0.1-SNAPSHOT
 ```
 
@@ -90,7 +90,7 @@ plugins {
 }
 
 allprojects {
-    group = "dev.unityinflow"
+    group = "io.github.unityinflow"
     version = "0.0.1-SNAPSHOT"
 
     repositories {
@@ -216,7 +216,7 @@ gh api repos/UnityInFlow/budget-breaker/milestones -f title="v0.0.1"
 
 `budget-breaker/src/main/kotlin/dev/unityinflow/budget/AgentBudget.kt`:
 ```kotlin
-package dev.unityinflow.budget
+package io.github.unityinflow.budget
 
 /**
  * Configuration for an agent's token budget.
@@ -242,7 +242,7 @@ data class AgentBudget(
 
 `budget-breaker/src/main/kotlin/dev/unityinflow/budget/BudgetException.kt`:
 ```kotlin
-package dev.unityinflow.budget
+package io.github.unityinflow.budget
 
 import kotlin.math.roundToInt
 
@@ -274,7 +274,7 @@ class BudgetHardLimitException(
 
 `budget-breaker/src/main/kotlin/dev/unityinflow/budget/BudgetEvent.kt`:
 ```kotlin
-package dev.unityinflow.budget
+package io.github.unityinflow.budget
 
 /** Events emitted by the budget system via SharedFlow. */
 sealed class BudgetEvent {
@@ -329,7 +329,7 @@ git checkout -b feat/core-engine
 
 `budget-breaker/src/test/kotlin/dev/unityinflow/budget/TokenTrackerTest.kt`:
 ```kotlin
-package dev.unityinflow.budget
+package io.github.unityinflow.budget
 
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.longs.shouldBeGreaterThan
@@ -422,7 +422,7 @@ class TokenTrackerTest {
 
 `budget-breaker/src/main/kotlin/dev/unityinflow/budget/TokenTracker.kt`:
 ```kotlin
-package dev.unityinflow.budget
+package io.github.unityinflow.budget
 
 import java.util.concurrent.atomic.AtomicLong
 
@@ -485,7 +485,7 @@ git commit -m "feat: add TokenTracker with AtomicLong pair for thread-safe track
 
 `budget-breaker/src/test/kotlin/dev/unityinflow/budget/ModelPricingTest.kt`:
 ```kotlin
-package dev.unityinflow.budget
+package io.github.unityinflow.budget
 
 import io.kotest.matchers.doubles.shouldBeGreaterThan
 import io.kotest.matchers.doubles.shouldBeLessThan
@@ -547,7 +547,7 @@ class ModelPricingTest {
 
 `budget-breaker/src/main/kotlin/dev/unityinflow/budget/ModelPricing.kt`:
 ```kotlin
-package dev.unityinflow.budget
+package io.github.unityinflow.budget
 
 /**
  * Estimates LLM API costs based on token usage.
@@ -611,7 +611,7 @@ git commit -m "feat: add ModelPricing with hardcoded defaults and custom overrid
 
 `budget-breaker/src/main/kotlin/dev/unityinflow/budget/BudgetReport.kt`:
 ```kotlin
-package dev.unityinflow.budget
+package io.github.unityinflow.budget
 
 /**
  * Summary of an agent's budget usage after a run completes.
@@ -633,7 +633,7 @@ data class BudgetReport(
 - [ ] **Step 2: Write test, commit**
 
 ```kotlin
-package dev.unityinflow.budget
+package io.github.unityinflow.budget
 
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.doubles.shouldBeGreaterThan
@@ -697,7 +697,7 @@ git commit -m "feat: add BudgetReport data class"
 
 `budget-breaker/src/main/kotlin/dev/unityinflow/budget/BudgetScope.kt`:
 ```kotlin
-package dev.unityinflow.budget
+package io.github.unityinflow.budget
 
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -792,7 +792,7 @@ class BudgetScope internal constructor(
 
 `budget-breaker/src/main/kotlin/dev/unityinflow/budget/BudgetCircuitBreaker.kt`:
 ```kotlin
-package dev.unityinflow.budget
+package io.github.unityinflow.budget
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.coroutineScope
@@ -854,7 +854,7 @@ class BudgetCircuitBreaker(
 
 `budget-breaker/src/test/kotlin/dev/unityinflow/budget/BudgetCircuitBreakerTest.kt`:
 ```kotlin
-package dev.unityinflow.budget
+package io.github.unityinflow.budget
 
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.shouldBe

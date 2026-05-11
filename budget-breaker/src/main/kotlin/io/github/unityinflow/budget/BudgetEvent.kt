@@ -1,4 +1,4 @@
-package dev.unityinflow.budget
+package io.github.unityinflow.budget
 
 /** Events emitted by the budget system via SharedFlow. */
 sealed class BudgetEvent {

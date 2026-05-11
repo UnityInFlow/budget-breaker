@@ -1,4 +1,4 @@
-package dev.unityinflow.budget
+package io.github.unityinflow.budget
 
 import kotlinx.coroutines.flow.MutableSharedFlow
 

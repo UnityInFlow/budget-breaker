@@ -1,4 +1,4 @@
-package dev.unityinflow.budget
+package io.github.unityinflow.budget
 
 /**
  * Configuration for an agent's token budget.

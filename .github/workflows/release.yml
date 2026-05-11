@@ -1,0 +1,64 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  publish:
+    runs-on: [arc-runner-unityinflow]
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Lint + build + unit tests
+        run: ./gradlew clean build --no-configuration-cache
+
+      - name: Publish aggregated bundle to Sonatype Central Portal
+        env:
+          SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
+          SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
+          SONATYPE_USERNAME: ${{ secrets.SONATYPE_USERNAME }}
+          SONATYPE_PASSWORD: ${{ secrets.SONATYPE_PASSWORD }}
+        run: ./gradlew publishAggregationToCentralPortal --no-configuration-cache
+
+      - name: Extract version
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: budget-breaker ${{ github.ref_name }}
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+          body: |
+            budget-breaker **${{ github.ref_name }}** is now available on Maven Central under `io.github.unityinflow`.
+
+            ```kotlin
+            dependencies {
+                implementation("io.github.unityinflow:budget-breaker:${{ steps.version.outputs.version }}")
+            }
+            ```
+
+            **NOTE:** With `publishingType = "USER_MANAGED"`, artifacts land in a
+            Sonatype Central Portal staging bundle after this workflow succeeds.
+            A human must press "Publish" in the portal UI to promote them to
+            Maven Central. Replication to `repo.maven.apache.org` takes ~30
+            minutes after the button press.

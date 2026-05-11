@@ -16,7 +16,7 @@ No reactive budget enforcement exists for Kotlin coroutines. `budget-breaker` fi
 
 ```kotlin
 dependencies {
-    implementation("dev.unityinflow:budget-breaker:0.0.1")
+    implementation("io.github.unityinflow:budget-breaker:0.0.1")
 }
 ```
 
@@ -24,7 +24,7 @@ dependencies {
 
 ```groovy
 dependencies {
-    implementation 'dev.unityinflow:budget-breaker:0.0.1'
+    implementation 'io.github.unityinflow:budget-breaker:0.0.1'
 }
 ```
 
@@ -32,7 +32,7 @@ dependencies {
 
 ```xml
 <dependency>
-    <groupId>dev.unityinflow</groupId>
+    <groupId>io.github.unityinflow</groupId>
     <artifactId>budget-breaker</artifactId>
     <version>0.0.1</version>
 </dependency>
@@ -43,7 +43,7 @@ dependencies {
 ### Basic `withBudget`
 
 ```kotlin
-import dev.unityinflow.budget.*
+import io.github.unityinflow.budget.*
 
 val budget = AgentBudget(
     model = "claude-sonnet-4-6",

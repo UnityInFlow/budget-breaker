@@ -1,4 +1,4 @@
-package dev.unityinflow.budget
+package io.github.unityinflow.budget
 
 /**
  * Summary of an agent's budget usage after a run completes.
