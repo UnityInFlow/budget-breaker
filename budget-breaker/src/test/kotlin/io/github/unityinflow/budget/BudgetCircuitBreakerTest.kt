@@ -146,6 +146,97 @@ class BudgetCircuitBreakerTest {
         breaker.getReport("agent-2")?.totalTokens shouldBe 300
     }
 
+    // ---- Task 2: snapshot and aggregate-breach API tests ----
+
+    @Test
+    fun `getAllReports returns completed agent with running false`() = runTest {
+        val breaker = BudgetCircuitBreaker(budget)
+
+        breaker.withBudget("snap-agent") {
+            trackCall(promptTokens = 100, completionTokens = 50)
+        }
+
+        val snapshots = breaker.getAllReports()
+        snapshots["snap-agent"] shouldNotBe null
+        snapshots["snap-agent"]!!.running shouldBe false
+        snapshots["snap-agent"]!!.report.agentId shouldBe "snap-agent"
+    }
+
+    @Test
+    fun `getActiveTrackerCount returns zero when no agents in flight`() = runTest {
+        val breaker = BudgetCircuitBreaker(budget)
+
+        breaker.withBudget("agent-x") {
+            trackCall(promptTokens = 50, completionTokens = 25)
+        }
+
+        breaker.getActiveTrackerCount() shouldBe 0
+    }
+
+    @Test
+    fun `getTotalSoftBreaches sums soft breach counts across completed reports`() = runTest {
+        val softBudget = AgentBudget(
+            model = "claude-sonnet-4-6",
+            hardLimitTokens = 1000,
+            softLimitTokens = 100,
+        )
+        val breaker = BudgetCircuitBreaker(softBudget)
+
+        breaker.withBudget("breach-agent-1") {
+            trackCall(promptTokens = 200, completionTokens = 50)
+        }
+        breaker.withBudget("breach-agent-2") {
+            trackCall(promptTokens = 200, completionTokens = 50)
+        }
+
+        // Each agent triggered a soft breach
+        breaker.getTotalSoftBreaches() shouldBe 2
+    }
+
+    @Test
+    fun `getTotalHardBreaches counts agents where hard limit was breached`() = runTest {
+        val breaker = BudgetCircuitBreaker(budget)
+
+        try {
+            breaker.withBudget("hard-agent") {
+                trackCall(promptTokens = 600, completionTokens = 500)
+            }
+        } catch (_: BudgetHardLimitException) { /* expected */ }
+
+        breaker.getTotalHardBreaches() shouldBe 1
+    }
+
+    @Test
+    fun `modelOf returns model from completed report`() = runTest {
+        val breaker = BudgetCircuitBreaker(budget)
+
+        breaker.withBudget("model-agent") {
+            trackCall(promptTokens = 50, completionTokens = 25)
+        }
+
+        breaker.modelOf("model-agent") shouldBe "claude-sonnet-4-6"
+        breaker.modelOf("non-existent") shouldBe null
+    }
+
+    @Test
+    fun `getAllReports returns immutable snapshot copy`() = runTest {
+        val breaker = BudgetCircuitBreaker(budget)
+
+        breaker.withBudget("immutable-agent") {
+            trackCall(promptTokens = 50, completionTokens = 25)
+        }
+
+        val snap1 = breaker.getAllReports()
+        breaker.withBudget("immutable-agent-2") {
+            trackCall(promptTokens = 100, completionTokens = 50)
+        }
+        val snap2 = breaker.getAllReports()
+
+        // snap1 was captured before agent-2 completed — it should not reflect agent-2
+        snap1.containsKey("immutable-agent-2") shouldBe false
+        snap2.containsKey("immutable-agent-2") shouldBe true
+    }
+
     @Test
     fun `CallTracked event carries model from budget`() = runTest {
         val breaker = BudgetCircuitBreaker(budget)
