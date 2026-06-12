@@ -5,12 +5,13 @@ import io.github.unityinflow.budget.BudgetEvent
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import org.slf4j.LoggerFactory
 import org.springframework.context.SmartLifecycle
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Subscribes to the [BudgetCircuitBreaker] events [kotlinx.coroutines.flow.SharedFlow] and
@@ -19,14 +20,17 @@ import java.util.concurrent.atomic.AtomicBoolean
  * ## Lifecycle
  *
  * Implements [SmartLifecycle]:
- * - [start] sets running = true and launches the Flow collector coroutine
- * - [stop] sets running = false and cancels the [CoroutineScope]
+ * - [start] sets running = true and launches a fresh Flow collector [Job]
+ * - [stop] sets running = false and cancels only the collection [Job] — the long-lived
+ *   parent [CoroutineScope] is never cancelled, so a subsequent [start] (permitted by the
+ *   [SmartLifecycle] contract, e.g. a JMX-triggered restart) launches a working collector
  * - [isRunning] reflects the current lifecycle state
  *
  * The [CoroutineScope] uses [SupervisorJob] + [Dispatchers.Default] to manage scope
  * lifecycle. Resilience to per-event handler failures is provided by the try/catch inside
  * the collect lambda, which logs at WARN and continues to the next event. [CancellationException]
- * is always re-thrown inside the catch to preserve clean shutdown when [stop] cancels the scope.
+ * is always re-thrown inside the catch to preserve clean shutdown when [stop] cancels the
+ * collection job.
  *
  * **Scope management:** scope is fully managed by [SmartLifecycle] — never uses the
  * global coroutine scope — so there is no resource leak on Spring context shutdown.
@@ -51,15 +55,19 @@ class SLF4JEventLogger(
     private val log = LoggerFactory.getLogger(SLF4JEventLogger::class.java)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val running = AtomicBoolean(false)
+    private val collectJob = AtomicReference<Job?>(null)
 
     /**
      * Starts the coroutine that collects [BudgetEvent]s and logs soft-limit breaches.
      *
      * Spring calls this near the end of context refresh, after all beans are ready.
+     * A fresh collection [Job] is launched per call, so a stop/start cycle (permitted by
+     * the [SmartLifecycle] contract) resumes event collection instead of launching a dead
+     * coroutine on a cancelled scope.
      */
     override fun start() {
         running.set(true)
-        scope.launch {
+        val job = scope.launch {
             breaker.events.collect { event ->
                 try {
                     when (event) {
@@ -79,17 +87,19 @@ class SLF4JEventLogger(
                 }
             }
         }
+        collectJob.getAndSet(job)?.cancel()
     }
 
     /**
-     * Cancels the coroutine scope, stopping all event collection.
+     * Cancels the collection job, stopping all event collection.
      *
      * Called by Spring during context shutdown — ensures no background coroutines outlive
-     * the Spring context.
+     * the Spring context. Only the collection [Job] is cancelled — the parent
+     * [SupervisorJob] stays alive so a subsequent [start] can resume collection.
      */
     override fun stop() {
         running.set(false)
-        scope.cancel()
+        collectJob.getAndSet(null)?.cancel()
     }
 
     override fun isRunning(): Boolean = running.get()
