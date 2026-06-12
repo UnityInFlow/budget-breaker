@@ -8,8 +8,8 @@ progress:
   total_phases: 3
   completed_phases: 0
   total_plans: 4
-  completed_plans: 1
-  percent: 25
+  completed_plans: 2
+  percent: 50
 ---
 
 # State: budget-breaker
@@ -68,9 +68,15 @@ Remaining Phase 2 scope: Spring Boot starter + integrations (#3–#6, #8).
 - `getAllReports()` overlays in-flight trackers over completed reports for full-picture snapshot
 - `compileOnly` for Spring/Micrometer in starter (consumers bring own managed version)
 - No `kapt` in starter (optional; JVM-24 risk per RESEARCH Pitfall 4)
+- `AtomicBoolean` for running flag, `AtomicReference<MeterRegistry?>` for registry in MetricsEventCollector (no var)
+- HealthIndicator always UP per D-07 (budget breach must never flip k8s probes to DOWN)
+- Metric names pinned to `gen_ai.client.token.usage.input/.output` (OtlpMetricMapper.kt contract)
+- Gauge backed by `AtomicReference<Double>` in ConcurrentHashMap for Micrometer strong-reference requirement
+- `kotlinx-coroutines-core` added as `implementation` to starter (core uses implementation not api)
 
 ## Session Notes
 
+- 2026-06-12: Phase 02, Plan 02 complete. Four Spring leaf components: BudgetBreakerProperties, BudgetEndpoint, BudgetBreakerHealthIndicator, MetricsEventCollector. TDD RED/GREEN on properties. Rule 3 fix: coroutines dep added to starter.
 - 2026-06-12: Phase 02, Plan 01 complete. Core D-08 enhancement (BudgetSnapshot, live-snapshot APIs), CallTracked.model field, starter build.gradle.kts wired.
 - 2026-05-11: Sonatype/Maven Central publishing infra added; v0.0.1 published as `io.github.unityinflow:budget-breaker:0.0.1` (issue #7 closed).
 - 2026-04-02: Harness engineering setup complete. Ready for GSD discuss-phase 1.
