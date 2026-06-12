@@ -5,6 +5,7 @@ import io.micrometer.core.instrument.MeterRegistry
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.yield
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
@@ -67,20 +68,35 @@ class BudgetStarterIntegrationTest {
 
     @Test
     fun `gen_ai counters appear in MeterRegistry after a tracked call`() = runBlocking<Unit> {
-        // Ensure the collector has subscribed to the events Flow.
-        // SmartLifecycle.start() is called by Spring during context refresh;
-        // yield here lets the coroutine dispatcher process the subscription before
-        // we emit the first event (mirrors BudgetCircuitBreakerTest yield pattern).
-        yield()
+        // Await both event collectors (SLF4JEventLogger + MetricsEventCollector) on the
+        // events Flow: it has no replay buffer, so emitting before their subscriptions are
+        // established on Dispatchers.Default would silently drop the event. A yield() on
+        // the runBlocking event loop cannot advance cross-dispatcher coroutines — bounded
+        // polling on the subscription count is deterministic on loaded CI runners.
+        withTimeout(5_000) {
+            while (breaker.subscriptions.value < 2) delay(10)
+        }
 
         breaker.withBudget("test-agent") {
             trackCall(promptTokens = 1000, completionTokens = 500)
         }
 
-        // Yield to let MetricsEventCollector's coroutine process the buffered CallTracked event.
-        yield()
-        // Small additional delay so Dispatchers.Default coroutine has time to run.
-        delay(50)
+        // Bounded poll: wait for the collector coroutine on Dispatchers.Default to process
+        // the buffered CallTracked event and increment both counters (no fixed sleeps).
+        withTimeout(5_000) {
+            while (
+                (
+                    registry.find("gen_ai.client.token.usage.input")
+                        .tag("agent", "test-agent").counter()?.count() ?: 0.0
+                ) < 1000.0 ||
+                (
+                    registry.find("gen_ai.client.token.usage.output")
+                        .tag("agent", "test-agent").counter()?.count() ?: 0.0
+                ) < 500.0
+            ) {
+                delay(10)
+            }
+        }
 
         val inputCount = registry
             .get("gen_ai.client.token.usage.input")

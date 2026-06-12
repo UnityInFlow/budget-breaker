@@ -3,6 +3,7 @@ package io.github.unityinflow.budget
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import java.util.concurrent.ConcurrentHashMap
 
@@ -30,6 +31,16 @@ class BudgetCircuitBreaker(
 
     /** SharedFlow of budget events for reactive consumers. */
     val events: SharedFlow<BudgetEvent> = _events.asSharedFlow()
+
+    /**
+     * Number of active subscribers on [events].
+     *
+     * [events] has no replay buffer, so events emitted before a consumer subscribes are
+     * silently dropped. Consumers that must not miss the first event — and tests that
+     * need to synchronize with asynchronously launched collectors — can await
+     * `subscriptions.value > 0` before triggering emissions.
+     */
+    val subscriptions: StateFlow<Int> = _events.subscriptionCount
 
     /**
      * Execute [block] within a budget-tracked scope.

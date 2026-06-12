@@ -121,13 +121,21 @@ class BudgetBreakerAutoConfigurationTest {
         collector.bindTo(throwingRegistry)
         collector.start()
 
+        // Await the collector's subscription: the events Flow has no replay buffer, so
+        // emitting before the subscription is established on Dispatchers.Default silently
+        // drops the event (bounded poll — deterministic on loaded CI runners).
+        withTimeout(5_000) {
+            while (breaker.subscriptions.value == 0) delay(10)
+        }
+
         // First call: registry throws on newCounter — without try/catch this kills the collect loop.
         breaker.withBudget("agent-error") {
             trackCall(promptTokens = 100, completionTokens = 50)
         }
 
-        // Allow the collector coroutine to process the first (failing) event.
-        delay(100)
+        // No further synchronization needed here: the single collector coroutine processes
+        // events in emission order, so the simulated first-newCounter failure
+        // deterministically lands on the agent-error event.
 
         // Second call: must still be processed if try/catch is in place.
         breaker.withBudget("agent-normal") {
@@ -154,6 +162,48 @@ class BudgetBreakerAutoConfigurationTest {
             .count()
         assertThat(inputCount).isEqualTo(200.0)
 
+        collector.stop()
+    }
+
+    /**
+     * Regression test for the [org.springframework.context.SmartLifecycle] restart contract:
+     * [MetricsEventCollector.stop] must cancel only the collection job so a subsequent
+     * [MetricsEventCollector.start] resumes event collection instead of launching a dead
+     * coroutine on a cancelled scope.
+     */
+    @Test
+    fun `collector resumes event collection after a stop-start cycle`() = runBlocking<Unit> {
+        val breaker = BudgetCircuitBreaker()
+        val registry = SimpleMeterRegistry()
+        val collector = MetricsEventCollector(breaker, ModelPricing())
+        collector.bindTo(registry)
+
+        collector.start()
+        withTimeout(5_000) { while (breaker.subscriptions.value == 0) delay(10) }
+
+        collector.stop()
+        withTimeout(5_000) { while (breaker.subscriptions.value != 0) delay(10) }
+
+        collector.start()
+        withTimeout(5_000) { while (breaker.subscriptions.value == 0) delay(10) }
+
+        breaker.withBudget("restart-agent") {
+            trackCall(promptTokens = 300, completionTokens = 100)
+        }
+
+        // The restarted collector must process events again
+        withTimeout(5_000) {
+            while (
+                (
+                    registry.find("gen_ai.client.token.usage.input")
+                        .tag("agent", "restart-agent").counter()?.count() ?: 0.0
+                ) < 300.0
+            ) {
+                delay(10)
+            }
+        }
+
+        assertThat(collector.isRunning).isTrue()
         collector.stop()
     }
 
