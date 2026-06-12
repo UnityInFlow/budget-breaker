@@ -6,6 +6,10 @@ plugins {
 dependencies {
     api(project(":budget-breaker"))
 
+    // kotlinx-coroutines is needed directly: the core module uses `implementation` (not `api`),
+    // so coroutines are not exposed transitively to the starter compile classpath.
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.1")
+
     // Spring Boot and Micrometer are compileOnly to avoid forcing a Spring Boot version on consumers.
     // Each consuming Spring Boot application brings its own managed version.
     compileOnly("org.springframework.boot:spring-boot-autoconfigure:3.5.3")
