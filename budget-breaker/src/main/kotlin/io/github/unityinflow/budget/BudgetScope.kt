@@ -30,6 +30,7 @@ class BudgetScope internal constructor(
                 tokensUsed = tracker.totalTokens,
                 promptTokens = promptTokens,
                 completionTokens = completionTokens,
+                model = tracker.model,
             )
         )
 

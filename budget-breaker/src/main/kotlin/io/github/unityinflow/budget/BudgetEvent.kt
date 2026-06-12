@@ -24,5 +24,7 @@ sealed class BudgetEvent {
         override val tokensUsed: Long,
         val promptTokens: Long,
         val completionTokens: Long,
+        /** The LLM model identifier from the agent's [io.github.unityinflow.budget.AgentBudget]. */
+        val model: String,
     ) : BudgetEvent()
 }
