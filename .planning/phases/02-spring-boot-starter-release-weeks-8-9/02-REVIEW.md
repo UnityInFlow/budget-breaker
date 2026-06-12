@@ -1,6 +1,6 @@
 ---
 phase: 02-spring-boot-starter-release-weeks-8-9
-reviewed: 2026-06-12T00:00:00Z
+reviewed: 2026-06-12T13:37:12Z
 depth: standard
 files_reviewed: 17
 files_reviewed_list:
@@ -22,251 +22,173 @@ files_reviewed_list:
   - budget-breaker/src/main/kotlin/io/github/unityinflow/budget/BudgetSnapshot.kt
   - budget-breaker/src/test/kotlin/io/github/unityinflow/budget/BudgetCircuitBreakerTest.kt
 findings:
-  critical: 2
-  warning: 8
-  info: 8
-  total: 18
+  critical: 0
+  warning: 7
+  info: 6
+  total: 13
 status: issues_found
 ---
 
-# Phase 2: Code Review Report
+# Phase 02: Code Review Report (re-review after gap-closure plan 02-05)
 
-**Reviewed:** 2026-06-12
+**Reviewed:** 2026-06-12T13:37:12Z
 **Depth:** standard
 **Files Reviewed:** 17
 **Status:** issues_found
 
 ## Summary
 
-Reviewed the Spring Boot starter module, the new core observability APIs (`getAllReports`, `BudgetSnapshot`, aggregate breach counters, `CallTracked.model`), and the release workflow. Supporting core files (`TokenTracker`, `ModelPricing`, `AgentBudget`, `BudgetReport`, `BudgetException`, root/buildSrc Gradle files) were read for cross-reference.
+This re-review verifies the two prior BLOCKER findings and performs a fresh standard-depth pass over all 17 files. Cross-referenced core classes the starter calls into (`TokenTracker`, `ModelPricing`, `BudgetReport`) and executed `./gradlew :budget-breaker-spring-boot-starter:test` to verify the fixes at runtime (exit 0, all tests pass).
 
-The code is well-documented and the bean-override and property-validation paths are tested. However, two Critical defects exist: (1) the auto-configuration will crash any consuming Spring Boot application that does not have Actuator and Micrometer on its runtime classpath — the starter declares them `compileOnly` but provides no `@ConditionalOnClass` guards; (2) both event collectors die permanently and silently on the first exception thrown inside their `collect` block, while the KDoc incorrectly claims `SupervisorJob` protects against this. Several lifecycle, concurrency, and test-reliability warnings follow.
+**Prior blocker verification:**
 
-## Critical Issues
+- **CR-01 (auto-config crash without Actuator/Micrometer) — FIXED.** `BudgetBreakerAutoConfiguration.kt:134-181` now isolates Actuator beans (`BudgetEndpoint`, `BudgetBreakerHealthIndicator`) and the Micrometer bean (`MetricsEventCollector`) in nested configurations guarded by string-form `@ConditionalOnClass(name = [...])`, which never forces class loading. `FilteredClassLoader` tests (`BudgetBreakerAutoConfigurationTest.kt:66-86`) verify the context starts cleanly without `HealthIndicator` and without `MeterRegistry`, and that the conditional beans are absent. Confirmed passing.
+- **CR-02 (handler exception permanently silences collectors) — FIXED.** Both `MetricsEventCollector.kt:102-111` and `SLF4JEventLogger.kt:64-79` wrap per-event dispatch in try/catch, log at WARN, and correctly re-throw `CancellationException` to preserve clean shutdown. A regression test (`event collection survives a handler exception`, `BudgetBreakerAutoConfigurationTest.kt:103-146`) proves the collect loop survives a first-event failure. Confirmed passing.
 
-### CR-01: Starter crashes consumer apps without Actuator/Micrometer on the runtime classpath
+No new critical issues found. Seven warnings remain: a broken `SmartLifecycle` restart contract in both event collectors, a bean-conflict gap on `budgetPricing`, agent-ID collision corruption in the core breaker, inaccurate in-flight breach reporting at the actuator endpoint, an unguarded user callback in the core soft-limit path (same failure class as CR-02, unfixed on the synchronous path), a subscription race that makes two event-driven tests flaky on loaded CI runners, and a missing tag-vs-Gradle-version guard in the release workflow.
 
-**File:** `budget-breaker-spring-boot-starter/src/main/kotlin/io/github/unityinflow/budget/spring/BudgetBreakerAutoConfiguration.kt:51-131` (and `budget-breaker-spring-boot-starter/build.gradle.kts:19-21`)
-
-**Issue:** `spring-boot-actuator-autoconfigure` and `micrometer-core` are `compileOnly` (build.gradle.kts:19-21), meaning consumers do NOT get them transitively. Yet `BudgetBreakerAutoConfiguration` has bean methods whose signatures reference Actuator/Micrometer types directly: `budgetEndpoint()` returns `BudgetEndpoint` (annotated `@Endpoint`), `budgetHealthIndicator()` returns `BudgetBreakerHealthIndicator` (implements `HealthIndicator`), and `budgetMetricsCollector()` returns `MetricsEventCollector` (implements `MeterBinder`). There are no `@ConditionalOnClass` guards anywhere. A plain Spring Boot app (web app without actuator — extremely common) that adds this starter will fail at context refresh with `NoClassDefFoundError`/`ClassNotFoundException` when Spring resolves the configuration class's bean methods. The starter only works for the subset of apps that already depend on both actuator AND micrometer. The auto-configuration test suite never exercises a classpath without these jars, so this is invisible in CI.
-
-**Fix:** Split the actuator/micrometer beans into nested configuration classes guarded by `@ConditionalOnClass`, so the outer class never forces those types to load:
-
-```kotlin
-@AutoConfiguration
-@EnableConfigurationProperties(BudgetBreakerProperties::class)
-class BudgetBreakerAutoConfiguration {
-    @Bean fun budgetPricing(...) = ...
-    @Bean @ConditionalOnMissingBean fun budgetCircuitBreaker(...) = ...
-    @Bean fun budgetEventLogger(...) = ...
-
-    @Configuration(proxyBeanMethods = false)
-    @ConditionalOnClass(name = ["org.springframework.boot.actuate.health.HealthIndicator"])
-    class ActuatorConfiguration {
-        @Bean fun budgetEndpoint(breaker: BudgetCircuitBreaker) = BudgetEndpoint(breaker)
-        @Bean fun budgetHealthIndicator(breaker: BudgetCircuitBreaker) = BudgetBreakerHealthIndicator(breaker)
-    }
-
-    @Configuration(proxyBeanMethods = false)
-    @ConditionalOnClass(name = ["io.micrometer.core.instrument.MeterRegistry"])
-    class MicrometerConfiguration {
-        @Bean fun budgetMetricsCollector(breaker: BudgetCircuitBreaker, pricing: ModelPricing) =
-            MetricsEventCollector(breaker, pricing)
-    }
-}
-```
-
-Add an `ApplicationContextRunner` test using `FilteredClassLoader(HealthIndicator::class.java, MeterRegistry::class.java)` to prove the context still starts without actuator/micrometer. (Alternative: promote actuator/micrometer to `api`/`implementation` deps — but conditional config is the established starter idiom and keeps the dependency footprint optional as the build comments intend.)
-
-### CR-02: Event collector coroutines die permanently and silently on the first handler exception
-
-**File:** `budget-breaker-spring-boot-starter/src/main/kotlin/io/github/unityinflow/budget/spring/MetricsEventCollector.kt:92-104` (same pattern in `SLF4JEventLogger.kt:57-74`)
-
-**Issue:** `start()` launches a single coroutine that runs `breaker.events.collect { ... }`. Any exception thrown inside the `collect` lambda terminates the `collect` call and the entire coroutine — all subsequent events are silently lost for the lifetime of the application, while `isRunning()` continues to report `true`. The KDoc (lines 45-46) claims "The CoroutineScope uses SupervisorJob ... so that a single event-handling failure does not cancel the entire collection loop" — this is false: `SupervisorJob` only isolates failures *between sibling children*, and there is exactly one child here. The failure path is realistic: Micrometer meter registration throws `IllegalArgumentException` in several registries when a meter with the same name is registered with a different tag set (e.g., another library or a future version emits `gen_ai.client.token.usage.input` with different tags into a Prometheus registry), and `pricing.estimateCost` operates on unvalidated user-supplied price config. Result: all token/cost/breach metrics stop flowing with no error surfaced anywhere — for a budget-governance tool this is silent loss of the primary safety signal.
-
-**Fix:** Catch and log per-event failures inside the loop so collection survives:
-
-```kotlin
-scope.launch {
-    breaker.events.collect { event ->
-        val registry = registryRef.get() ?: return@collect
-        try {
-            when (event) {
-                is BudgetEvent.CallTracked -> handleCallTracked(event, registry)
-                is BudgetEvent.SoftLimitReached -> handleSoftLimitReached(event, registry)
-                is BudgetEvent.HardLimitExceeded -> handleHardLimitExceeded(event, registry)
-            }
-        } catch (e: Exception) {
-            log.warn("budget-breaker metrics handler failed for event {}", event, e)
-        }
-    }
-}
-```
-
-Apply the same guard in `SLF4JEventLogger`, and correct the misleading `SupervisorJob` KDoc in both classes.
+## Narrative Findings (AI reviewer)
 
 ## Warnings
 
-### WR-01: `budgetPricing` bean lacks `@ConditionalOnMissingBean` — user override of `ModelPricing` breaks startup; user breaker override breaks D-11
+### WR-01: SmartLifecycle restart silently does nothing — `isRunning()` lies after stop/start cycle
 
-**File:** `budget-breaker-spring-boot-starter/src/main/kotlin/io/github/unityinflow/budget/spring/BudgetBreakerAutoConfiguration.kt:62-68`
-
-**Issue:** Only `budgetCircuitBreaker` is guarded with `@ConditionalOnMissingBean`. If a consumer defines their own `ModelPricing` bean, the context gets two `ModelPricing` beans and `budgetCircuitBreaker(properties, pricing)` / `budgetMetricsCollector(...)` fail with `NoUniqueBeanDefinitionException` at startup. Separately, when a user provides their own `BudgetCircuitBreaker` (the documented D-17 path), that breaker carries its own internal pricing, but `MetricsEventCollector` is still wired with the auto-config `budgetPricing` built from `budget-breaker.pricing.*` properties — so `budget.breaker.cost.usd` can diverge from the breaker's own cost reports, violating the D-11 invariant the KDoc promises.
-
-**Fix:** Add `@ConditionalOnMissingBean` to `budgetPricing`, and document that users who override `BudgetCircuitBreaker` should also override `ModelPricing` to keep metrics costs consistent (or expose pricing from the breaker so the collector can reuse it).
-
-### WR-02: Concurrent `withBudget` runs with the same agentId corrupt tracker and report state
-
-**File:** `budget-breaker/src/main/kotlin/io/github/unityinflow/budget/BudgetCircuitBreaker.kt:50, 60-62`
-
-**Issue:** `activeTrackers[agentId] = tracker` unconditionally overwrites. If two runs share an agentId concurrently: run B's tracker replaces run A's; when run A finishes, `activeTrackers.remove(agentId)` removes *run B's* tracker, so a live agent disappears from `getActiveTrackerCount()`, `getAllReports()` (running view), the health indicator, and the usage-ratio gauge, while `reports[agentId]` flip-flops between the two runs. Budget enforcement per run still works (each scope holds its own tracker), but every observability surface built in this phase reports wrong data under this collision, with no error or warning.
-
-**Fix:** Either reject the collision (`require(activeTrackers.putIfAbsent(agentId, tracker) == null) { "agent '$agentId' is already running" }`) with a guarded remove (`activeTrackers.remove(agentId, tracker)`), or document single-flight-per-agentId as a hard contract and use `remove(agentId, tracker)` so a newer run is never evicted by an older one.
-
-### WR-03: `SmartLifecycle` restart is broken — `start()` after `stop()` silently does nothing while `isRunning()` reports true
-
-**File:** `budget-breaker-spring-boot-starter/src/main/kotlin/io/github/unityinflow/budget/spring/MetricsEventCollector.kt:65, 92-115`; `SLF4JEventLogger.kt:49, 57-87`
-
-**Issue:** `scope` is created once at construction. `stop()` calls `scope.cancel()`, which cancels the scope's `Job` permanently. A subsequent `start()` (Spring lifecycle restart, e.g., via `LifecycleProcessor` or actuator `restart`) sets `running = true` and calls `scope.launch { ... }` — but launching on a cancelled scope creates an already-cancelled coroutine that never runs. The component then reports `isRunning() == true` while collecting nothing.
-
-**Fix:** Create the `Job`/scope inside `start()` and cancel it in `stop()`:
-
+**File:** `budget-breaker-spring-boot-starter/src/main/kotlin/io/github/unityinflow/budget/spring/MetricsEventCollector.kt:70,97-125` and `budget-breaker-spring-boot-starter/src/main/kotlin/io/github/unityinflow/budget/spring/SLF4JEventLogger.kt:52,60-93`
+**Issue:** Both classes create their `CoroutineScope` once at construction (`SupervisorJob() + Dispatchers.Default`). `stop()` calls `scope.cancel()`, which cancels the parent `SupervisorJob` permanently. A subsequent `start()` — which the `SmartLifecycle` contract explicitly permits (JMX-triggered restart, `LifecycleProcessor` stop/start, context restart in tests) — sets `running = true` and calls `scope.launch {}` on a cancelled scope: the launched coroutine is dead on arrival and never subscribes to the events Flow. The component then reports `isRunning() == true` while collecting nothing — metrics and WARN logs silently stop forever with no error.
+**Fix:** Create the job per start instead of per instance:
 ```kotlin
-private var job: kotlinx.coroutines.Job? = null  // guarded by lifecycle calls
+private val supervisor = SupervisorJob()
+private var job: Job? = null
+
 override fun start() {
     running.set(true)
-    job = CoroutineScope(SupervisorJob() + Dispatchers.Default).launch { ... }
+    job = CoroutineScope(supervisor + Dispatchers.Default).launch { ... }
 }
+
 override fun stop() {
     running.set(false)
     job?.cancel()
+    job = null
 }
 ```
+(cancel only the collection job in `stop()`, never the long-lived parent). Apply to both `MetricsEventCollector` and `SLF4JEventLogger`.
 
-### WR-04: Subscription race — events emitted shortly after `start()` returns are silently dropped
+### WR-02: `budgetPricing` bean lacks `@ConditionalOnMissingBean` — user-defined `ModelPricing` bean crashes the context
 
-**File:** `budget-breaker-spring-boot-starter/src/main/kotlin/io/github/unityinflow/budget/spring/MetricsEventCollector.kt:92-104`; `SLF4JEventLogger.kt:57-74`; root cause interacts with `budget-breaker/src/main/kotlin/io/github/unityinflow/budget/BudgetCircuitBreaker.kt:29`
-
-**Issue:** `start()` returns as soon as `scope.launch` schedules the collector on `Dispatchers.Default`; actual subscription to the `SharedFlow` happens later on another thread. `MutableSharedFlow(extraBufferCapacity = 64)` has `replay = 0`, so any `BudgetEvent` emitted between context refresh completing and the collector subscribing is dropped without trace — e.g., an agent run triggered by an `ApplicationReadyEvent` listener can lose its first `CallTracked`/breach events from metrics and WARN logging. The integration test acknowledges this exact race by inserting `yield()` + `delay(50)` workarounds.
-
-**Fix:** Block `start()` until subscription is active using `SharedFlow.subscriptionCount`:
-
-```kotlin
-override fun start() {
-    running.set(true)
-    scope.launch { breaker.events.collect { ... } }
-    runBlocking { breaker.events.subscriptionCount.first { it > 0 } } // start() is a lifecycle thread, bounded wait
-}
-```
-
-or give the events flow `replay` capacity in the core so late subscribers see recent events.
-
-### WR-05: Slow event subscriber can suspend `trackCall` and stall agent execution (backpressure via SUSPEND overflow)
-
-**File:** `budget-breaker/src/main/kotlin/io/github/unityinflow/budget/BudgetCircuitBreaker.kt:29`; emission sites `BudgetScope.kt:27, 47, 60`
-
-**Issue:** `MutableSharedFlow(extraBufferCapacity = 64)` uses the default `BufferOverflow.SUSPEND`. Once any subscriber exists (the starter always wires two), a subscriber that falls 64 events behind causes `eventFlow.emit(...)` inside `trackCall` to suspend — meaning an observability consumer can block the agent's hot path indefinitely (e.g., if the metrics handler hangs or the dispatcher is starved). This contradicts the "zero overhead on happy path" acceptance criterion and couples agent liveness to observer health. Combined with CR-02 (a dead collector no longer drains but also unsubscribes only if the coroutine fully completes — a hung handler keeps the subscription alive), this is a plausible production stall.
-
-**Fix:** Use `onBufferOverflow = BufferOverflow.DROP_OLDEST` (observability events are lossy-tolerable), or `tryEmit` with a dropped-event counter, and document the delivery guarantee.
-
-### WR-06: `/actuator/budget/{agentId}` returns 404 for in-flight agents that the aggregate endpoint reports
-
-**File:** `budget-breaker-spring-boot-starter/src/main/kotlin/io/github/unityinflow/budget/spring/BudgetEndpoint.kt:62`
-
-**Issue:** `agentBudget` delegates to `breaker.getReport(agentId)`, which reads only the completed-reports map. A user who sees `agent-x` listed as `running: true` in `GET /actuator/budget` then gets a 404 from `GET /actuator/budget/agent-x`. The KDoc documents this, but the core already exposes the data needed to answer correctly — the inconsistency is gratuitous and will read as a bug to operators.
-
-**Fix:** `fun agentBudget(@Selector agentId: String): BudgetReport? = breaker.getAllReports()[agentId]?.report` (or return the `BudgetSnapshot` so the `running` flag is included).
-
-### WR-07: `ModelPriceProperties` accepts negative prices and silently defaults missing sides to 0.0
-
-**File:** `budget-breaker-spring-boot-starter/src/main/kotlin/io/github/unityinflow/budget/spring/BudgetBreakerProperties.kt:61-64`
-
-**Issue:** `BudgetBreakerProperties` validates the token limits but pricing entries are unvalidated. `inputPerMillion = -5.0` is accepted and produces negative cost in `budget.breaker.cost.usd` (a Micrometer `Counter.increment(negative)` — counters reject or corrupt on negative increments depending on registry, feeding CR-02). A user who sets only `input-per-million` silently gets `outputPerMillion = 0.0`, under-reporting cost with no warning — for a budget-control tool, silently wrong cost data defeats the product's purpose.
-
+**File:** `budget-breaker-spring-boot-starter/src/main/kotlin/io/github/unityinflow/budget/spring/BudgetBreakerAutoConfiguration.kt:78-84`
+**Issue:** `budgetCircuitBreaker` is guarded with `@ConditionalOnMissingBean` (D-17), but `budgetPricing` is not. If a consuming application defines its own `ModelPricing` bean, the context contains two `ModelPricing` candidates; the by-type injection points (`budgetCircuitBreaker(properties, pricing)` at lines 99-102 and `budgetMetricsCollector(breaker, pricing)` at lines 177-180) fail with `NoUniqueBeanDefinitionException` — startup crash. Neither bean name matches the parameter name `pricing`, so by-name disambiguation does not rescue it. Secondary effect: when a user overrides `BudgetCircuitBreaker` (the documented D-17 extension path), `MetricsEventCollector` still receives the auto-config's pricing, which may diverge from the pricing inside the user's breaker — violating the D-11 invariant ("cost counter uses the same overrides as the breaker") that the shared bean exists to guarantee.
 **Fix:**
-
 ```kotlin
-data class ModelPriceProperties(
-    val inputPerMillion: Double = 0.0,
-    val outputPerMillion: Double = 0.0,
-) {
-    init {
-        require(inputPerMillion >= 0) { "budget-breaker.pricing.*.input-per-million must be >= 0" }
-        require(outputPerMillion >= 0) { "budget-breaker.pricing.*.output-per-million must be >= 0" }
+@Bean
+@ConditionalOnMissingBean
+fun budgetPricing(properties: BudgetBreakerProperties): ModelPricing = ...
+```
+and document that users overriding `BudgetCircuitBreaker` should also provide a matching `ModelPricing` bean to keep metrics cost in sync.
+
+### WR-03: Concurrent `withBudget` runs with the same agentId corrupt tracking state
+
+**File:** `budget-breaker/src/main/kotlin/io/github/unityinflow/budget/BudgetCircuitBreaker.kt:50,60-62`
+**Issue:** `activeTrackers[agentId] = tracker` unconditionally overwrites. If two coroutines run `withBudget("agent-1")` concurrently (easy in a Spring app serving parallel requests), the second registration replaces the first tracker. When the first run finishes, its `finally` block executes `activeTrackers.remove(agentId)` — removing the *second* run's tracker. Consequences: the still-running agent vanishes from `getAllReports()` and `getActiveTrackerCount()` (health indicator and `/actuator/budget` under-report), and `reports[agentId]` is overwritten by whichever run completes last, mixing results from interleaved runs. There is no guard, no error, and no KDoc warning that agentId must be unique per concurrent run.
+**Fix:** Either fail fast on collision:
+```kotlin
+val previous = activeTrackers.putIfAbsent(agentId, tracker)
+require(previous == null) { "Agent '$agentId' is already running inside withBudget" }
+```
+with the two-arg `activeTrackers.remove(agentId, tracker)` in `finally`, or key internal state by a unique run ID — and document the chosen contract.
+
+### WR-04: In-flight snapshot hardcodes `softLimitBreachCount = 0` — actuator endpoint reports false data during a breach
+
+**File:** `budget-breaker/src/main/kotlin/io/github/unityinflow/budget/BudgetCircuitBreaker.kt:100`
+**Issue:** `getAllReports()` builds live reports for in-flight agents with `softLimitBreachCount = 0` regardless of whether the agent has already breached its soft limit. An operator inspecting `GET /actuator/budget` during an active soft breach — exactly the moment the endpoint matters most — sees `softLimitBreachCount: 0` for the running agent even while `percentUsed` shows the breach. The real counter lives in `BudgetScope` (`BudgetScope.kt:15`), which the breaker cannot reach because `activeTrackers` only retains the `TokenTracker`.
+**Fix:** Move the breach counter into `TokenTracker` (or retain the `BudgetScope` alongside the tracker) so the live snapshot can report the true count:
+```kotlin
+softLimitBreachCount = tracker.softLimitBreachCount,
+```
+
+### WR-05: Unguarded `onSoftLimit` user callback aborts the agent run and suppresses the `SoftLimitReached` event
+
+**File:** `budget-breaker/src/main/kotlin/io/github/unityinflow/budget/BudgetScope.kt:56-68`
+**Issue:** `onSoftLimit?.invoke(report)` at line 59 runs user code synchronously inside `trackCall` with no try/catch. If the callback throws: (a) the exception propagates out of `trackCall` and aborts the agent's run — a logging/alerting hook kills the agent; and (b) `eventFlow.emit(SoftLimitReached(...))` at lines 60-67 is never reached, so the SLF4J logger and the Micrometer breach counter never observe the breach. Because `softLimitFired.getAndSet(true)` already flipped at line 56, the event can never fire on subsequent calls either — the breach is permanently invisible. This is the same failure class as the fixed CR-02 (a handler failure must not break the event pipeline), unaddressed on the synchronous callback path.
+**Fix:** Emit the event before invoking the callback, and isolate callback failures:
+```kotlin
+if (tracker.isAboveSoftLimit() && !softLimitFired.getAndSet(true)) {
+    softLimitBreachCount.incrementAndGet()
+    eventFlow.emit(BudgetEvent.SoftLimitReached(...))
+    try {
+        onSoftLimit?.invoke(buildReport(0))
+    } catch (e: Exception) {
+        if (e is CancellationException) throw e
+        // log and continue — callback failure must not abort the agent run
     }
 }
 ```
+(or explicitly document that a throwing callback aborts the run — but the event must still be emitted first).
 
-Consider making both fields required (no defaults) so partial configuration fails fast at binding time.
+### WR-06: Event-driven tests race on Flow subscription — flaky on loaded CI runners
 
-### WR-08: Integration test is order-dependent and timing-dependent (shared context, shared agentId, bare `delay(50)`)
+**File:** `budget-breaker-spring-boot-starter/src/test/kotlin/io/github/unityinflow/budget/spring/BudgetStarterIntegrationTest.kt:69-98` and `budget-breaker-spring-boot-starter/src/test/kotlin/io/github/unityinflow/budget/spring/BudgetBreakerAutoConfigurationTest.kt:103-146`
+**Issue:** Both collectors subscribe via `scope.launch` on `Dispatchers.Default`, and `breaker.events` is a `SharedFlow` with `replay = 0` — events emitted before subscription is established are silently dropped.
+- `BudgetStarterIntegrationTest:74`: the `yield()` runs on the `runBlocking` event loop and does nothing to advance the collector coroutine on `Dispatchers.Default`; the comment's claim that it "lets the coroutine dispatcher process the subscription" is incorrect for a cross-dispatcher coroutine. If the collector launched during context refresh has not reached `collect` when `trackCall` emits, the event is dropped and `registry.get(...)` throws `MeterNotFoundException`. The fixed `delay(50)` at line 83 is also a hard race bound on shared self-hosted runners.
+- `BudgetBreakerAutoConfigurationTest:110-121`: `collector.start()` returns before the launched coroutine subscribes; the `delay(100)` is a heuristic, not a guarantee. If the first (`agent-error`) emission is dropped, the simulated first-`newCounter` failure lands on the `agent-normal` event instead, its input counter is never registered, and the 5-second bounded poll times out.
+**Fix:** Await subscription before emitting — e.g., expose `val subscriptions: StateFlow<Int> = _events.subscriptionCount` on `BudgetCircuitBreaker` and poll `subscriptions.value > 0` inside `withTimeout`; replace the fixed `delay(50)` in the integration test with the bounded-poll pattern already used at `BudgetBreakerAutoConfigurationTest:126-136`.
 
-**File:** `budget-breaker-spring-boot-starter/src/test/kotlin/io/github/unityinflow/budget/spring/BudgetStarterIntegrationTest.kt:69-111`
+### WR-07: Release workflow never verifies the git tag matches the Gradle project version
 
-**Issue:** Both test methods share one cached Spring context (same breaker, same `SimpleMeterRegistry`, same started collector) and both run `withBudget("test-agent") { trackCall(1000, 500) }`. The first test asserts `count() == 1000.0` exactly. JUnit 5's default method order is deterministic but unspecified — if `budget endpoint reports the tracked agent after a call` executes first, the collector increments the counter to 1000 before the metrics test runs, and the metrics test then observes 2000.0 and fails. Additionally, `yield()` on `runBlocking`'s dispatcher does nothing for the collector running on `Dispatchers.Default`; correctness rests entirely on the bare `delay(50)`, which is a flake under loaded CI runners (the self-hosted Hetzner boxes run parallel jobs). This affects test reliability, not just style.
-
-**Fix:** Use a unique agent ID per test (e.g., method-name based), and replace `yield()/delay(50)` with bounded polling:
-
-```kotlin
-withTimeout(5_000) {
-    while (registry.find("gen_ai.client.token.usage.input").tag("agent", agentId).counter() == null) {
-        delay(10)
-    }
-}
+**File:** `.github/workflows/release.yml:37-41` (with the version pinned in both `gradle.properties` and root `build.gradle.kts:12`)
+**Issue:** The published Maven coordinates come from the Gradle `version` property (currently hardcoded in two places: `gradle.properties` `version=0.1.0` and root `build.gradle.kts:12` `version = "0.1.0"`), while the GitHub release notes derive the version from the tag (`${GITHUB_REF_NAME#v}`, lines 39-41, 58, 69). Nothing checks they agree. Tagging `v0.2.0` while Gradle still says `0.1.0` produces a release page instructing users to depend on `0.2.0` while the Sonatype bundle contains `0.1.0` (or a duplicate version the portal rejects only after the build and publish steps already ran). Duplicating the version across two files makes this drift likely.
+**Fix:** Add a guard step before publishing:
+```yaml
+- name: Verify tag matches Gradle version
+  run: |
+    GRADLE_VERSION=$(./gradlew properties -q --no-configuration-cache | awk '/^version:/ {print $2}')
+    TAG_VERSION="${GITHUB_REF_NAME#v}"
+    if [ "$GRADLE_VERSION" != "$TAG_VERSION" ]; then
+      echo "Tag $TAG_VERSION does not match Gradle version $GRADLE_VERSION" >&2
+      exit 1
+    fi
 ```
+and define the version once (in `gradle.properties`), removing the duplicate in `build.gradle.kts`.
 
 ## Info
 
-### IN-01: Dead catch-and-rethrow block
+### IN-01: Dead catch-and-rethrow block in `withBudget`
 
 **File:** `budget-breaker/src/main/kotlin/io/github/unityinflow/budget/BudgetCircuitBreaker.kt:56-57`
-**Issue:** `catch (e: BudgetHardLimitException) { throw e }` is a no-op — the exception would propagate identically without it.
-**Fix:** Delete the catch block; the `finally` is sufficient.
+**Issue:** `catch (e: BudgetHardLimitException) { throw e }` is a no-op — the exception propagates identically without it, and `finally` runs either way.
+**Fix:** Delete the catch clause (keep `try`/`finally`).
 
-### IN-02: Wall-clock duration measurement
+### IN-02: Release notes hardcode "new in v0.1.0"
 
-**File:** `budget-breaker/src/main/kotlin/io/github/unityinflow/budget/BudgetCircuitBreaker.kt:47, 61`
-**Issue:** `System.currentTimeMillis()` is not monotonic — NTP adjustments can produce negative or skewed `durationMs` in reports.
-**Fix:** Use `kotlin.time.TimeSource.Monotonic.markNow()` (or `System.nanoTime()`).
+**File:** `.github/workflows/release.yml:62`
+**Issue:** The body template says "Spring Boot starter (new in v0.1.0)" for every future tag; the v0.2.0 release will still claim the starter is new in v0.1.0.
+**Fix:** Drop the "(new in v0.1.0)" qualifier from the reusable template.
 
-### IN-03: `!!` without the project-mandated safety comment
+### IN-03: Per-agent actuator endpoint returns 404 for in-flight agents the aggregate endpoint shows
 
-**File:** `budget-breaker-spring-boot-starter/src/test/kotlin/io/github/unityinflow/budget/spring/BudgetStarterIntegrationTest.kt:110`; `budget-breaker/src/test/kotlin/io/github/unityinflow/budget/BudgetCircuitBreakerTest.kt:161-162`
-**Issue:** Project rule (CLAUDE.md "Do Not") requires every `!!` to carry a comment explaining why it is safe; `BudgetCircuitBreakerTest.kt:124` follows the rule, these three usages do not.
-**Fix:** Add `// safe: asserted non-null above` comments, or use `shouldNotBe null` + `?.` chains.
+**File:** `budget-breaker-spring-boot-starter/src/main/kotlin/io/github/unityinflow/budget/spring/BudgetEndpoint.kt:62`
+**Issue:** `agentBudget` delegates to `breaker.getReport(agentId)`, which only consults completed reports. `GET /actuator/budget` lists a running agent while `GET /actuator/budget/{id}` for the same agent returns 404. The KDoc documents this, but it is surprising API behavior with a one-line fix available.
+**Fix:** `fun agentBudget(@Selector agentId: String): BudgetReport? = breaker.getAllReports()[agentId]?.report`
 
-### IN-04: Release workflow: stale/misleading release notes and no tag-version consistency check
+### IN-04: `ModelPriceProperties` defaults to 0.0 with no validation — partial pricing config silently yields $0 cost metrics
 
-**File:** `.github/workflows/release.yml:51-77` (and root `build.gradle.kts:12`)
-**Issue:** (a) The body hardcodes "Spring Boot starter (new in v0.1.0)" — every future tag (v0.2.0, …) will repeat this text. (b) It states the release "is now available on Maven Central" while the NOTE in the same body admits `USER_MANAGED` staging requires a manual portal action — the GitHub Release is created before the artifacts are actually public. (c) Nothing verifies the pushed tag matches the hardcoded `version = "0.1.0"` in the root build — tagging `v0.2.0` would publish `0.1.0` artifacts under a `v0.2.0` release. (d) `softprops/action-gh-release@v2` is pinned by mutable tag rather than commit SHA.
-**Fix:** Derive the Gradle version from the tag (or assert equality and fail), soften the availability wording ("staged for Maven Central, pending portal publish"), drop the "new in v0.1.0" literal, and pin the third-party action by SHA.
+**File:** `budget-breaker-spring-boot-starter/src/main/kotlin/io/github/unityinflow/budget/spring/BudgetBreakerProperties.kt:61-64`
+**Issue:** Omitting `output-per-million` (or fat-fingering a key so binding skips it) silently prices that dimension at $0.0, undercounting `budget.breaker.cost.usd` with no warning. `ModelPricing.estimateCost` (`ModelPricing.kt:17`) likewise returns 0.0 for unknown models. Validation exists for token limits but not for pricing.
+**Fix:** Add `init { require(inputPerMillion >= 0.0 && outputPerMillion >= 0.0) }` and warn (or fail) at startup when a pricing override entry leaves both values at the 0.0 default.
 
-### IN-05: `softLimitBreachCount` can only ever be 0 or 1
+### IN-05: Nested auto-config classes use Kotlin `inner` instead of static nesting
 
-**File:** `budget-breaker/src/main/kotlin/io/github/unityinflow/budget/BudgetScope.kt:15-16, 56-58`
-**Issue:** `softLimitFired` (AtomicBoolean) gates the increment, so the `AtomicInteger` never exceeds 1; `BudgetReport.softLimitBreachCount` and `getTotalSoftBreaches()` ("total number of soft limit breaches") therefore actually count *agents that breached*, not breaches. Misleading naming plus redundant state.
-**Fix:** Either replace the counter with a Boolean (`softLimitBreached`) and rename the aggregate, or count every breach and emit/fire only on the first.
+**File:** `budget-breaker-spring-boot-starter/src/main/kotlin/io/github/unityinflow/budget/spring/BudgetBreakerAutoConfiguration.kt:136,168`
+**Issue:** `ActuatorConfiguration` and `MicrometerConfiguration` are declared `inner class`, compiling to non-static nested classes whose constructors require the enclosing instance. This works (Spring resolves the enclosing config bean — verified by the passing test suite), but Spring's documented convention is static nested `@Configuration` classes, and neither class touches outer state. The `inner` modifier adds reliance on under-specified Spring instantiation behavior for zero benefit.
+**Fix:** Remove the `inner` modifier (a plain Kotlin nested class compiles to a static nested class).
 
-### IN-06: Hard-limit boundary semantics contradict the documentation
+### IN-06: Events arriving before `bindTo` are silently dropped by the metrics collector
 
-**File:** `budget-breaker/src/main/kotlin/io/github/unityinflow/budget/TokenTracker.kt:39` (docs in `AgentBudget.kt:7`, `BudgetBreakerProperties.kt:27-28`)
-**Issue:** `isAboveHardLimit()` uses `totalTokens >= hardLimitTokens`, so a run is cancelled when it *reaches* the limit, while all KDoc ("exceeding this cancels") implies strictly greater-than. An agent budgeted at exactly N tokens that uses exactly N is killed.
-**Fix:** Use `>` for the hard limit, or align all documentation to "reaching".
-
-### IN-07: `BudgetSoftLimitException` is dead code
-
-**File:** `budget-breaker/src/main/kotlin/io/github/unityinflow/budget/BudgetException.kt:9-16` (cross-reference)
-**Issue:** Grep confirms `BudgetSoftLimitException` is defined but never thrown or referenced anywhere in the codebase — a public API that can never occur.
-**Fix:** Remove it, or wire it into the soft-limit path if a throwing mode is planned (it is part of the v0.0.1 acceptance criteria's "sealed hierarchy", so document intent if kept).
-
-### IN-08: Tracked-agent state is never evicted — `/actuator/budget` and meter tags grow without bound and report stale agents forever
-
-**File:** `budget-breaker/src/main/kotlin/io/github/unityinflow/budget/BudgetCircuitBreaker.kt:27`; `budget-breaker-spring-boot-starter/src/main/kotlin/io/github/unityinflow/budget/spring/MetricsEventCollector.kt:75, 169-176`
-**Issue:** `reports` and `ratioHolders` only ever grow; with per-run agent IDs (UUIDs are a natural choice) every run adds a permanent map entry, a permanent gauge, and permanent counter tag combinations. Beyond the (out-of-scope) memory aspect, this is a behavioral defect: the actuator endpoint payload and health computations include every agent since process start, and stale usage-ratio gauges keep reporting their last value indefinitely.
-**Fix:** Add an eviction policy (max entries / TTL) or a `clearReport(agentId)`/`reset()` API, and remove the gauge holder (`registry.remove`) when an agent's report is evicted. Document retention behavior in the endpoint KDoc.
+**File:** `budget-breaker-spring-boot-starter/src/main/kotlin/io/github/unityinflow/budget/spring/MetricsEventCollector.kt:101`
+**Issue:** `val registry = registryRef.get() ?: return@collect` silently discards events when the collector is started but not yet bound (a misconfigured manual setup, as the integration test's explicit `bindTo` call illustrates). Silent data loss is hard to diagnose.
+**Fix:** Log once at WARN (e.g., guarded by an `AtomicBoolean`) when events are dropped because no registry is bound.
 
 ---
 
-_Reviewed: 2026-06-12_
+_Reviewed: 2026-06-12T13:37:12Z_
 _Reviewer: Claude (gsd-code-reviewer)_
 _Depth: standard_
