@@ -110,7 +110,7 @@ class BudgetCircuitBreaker(
                     tracker.promptTokens,
                     tracker.completionTokens,
                 ),
-                softLimitBreachCount = 0,
+                softLimitBreachCount = tracker.softLimitBreachCount,
                 hardLimitBreached = tracker.isAboveHardLimit(),
                 durationMs = 0,
                 percentUsed = tracker.percentUsed(),

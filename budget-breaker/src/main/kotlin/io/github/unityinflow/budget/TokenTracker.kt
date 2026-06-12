@@ -1,5 +1,6 @@
 package io.github.unityinflow.budget
 
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 
 /**
@@ -21,15 +22,29 @@ class TokenTracker(
 
     private val _promptTokens = AtomicLong(0)
     private val _completionTokens = AtomicLong(0)
+    private val _softLimitBreachCount = AtomicInteger(0)
 
     val promptTokens: Long get() = _promptTokens.get()
     val completionTokens: Long get() = _completionTokens.get()
     val totalTokens: Long get() = _promptTokens.get() + _completionTokens.get()
 
+    /**
+     * Number of soft limit breaches recorded for this run.
+     *
+     * Lives on the tracker (not [BudgetScope]) so live snapshots of in-flight agents
+     * can report the true count while the run is still executing.
+     */
+    val softLimitBreachCount: Int get() = _softLimitBreachCount.get()
+
     /** Record token usage from an LLM call. */
     fun add(promptTokens: Long, completionTokens: Long) {
         _promptTokens.addAndGet(promptTokens)
         _completionTokens.addAndGet(completionTokens)
+    }
+
+    /** Record a soft limit breach. Called by [BudgetScope] when the soft limit first trips. */
+    internal fun recordSoftLimitBreach() {
+        _softLimitBreachCount.incrementAndGet()
     }
 
     /** Check if total tokens exceed the soft limit. */

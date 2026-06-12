@@ -12,7 +12,6 @@ class BudgetScope internal constructor(
     private val onSoftLimit: ((BudgetReport) -> Unit)?,
     private val eventFlow: MutableSharedFlow<BudgetEvent>,
 ) {
-    private val softLimitBreachCount = java.util.concurrent.atomic.AtomicInteger(0)
     private val softLimitFired = java.util.concurrent.atomic.AtomicBoolean(false)
 
     /**
@@ -54,7 +53,7 @@ class BudgetScope internal constructor(
         }
 
         if (tracker.isAboveSoftLimit() && !softLimitFired.getAndSet(true)) {
-            softLimitBreachCount.incrementAndGet()
+            tracker.recordSoftLimitBreach()
             val report = buildReport(0)
             onSoftLimit?.invoke(report)
             eventFlow.emit(
@@ -79,7 +78,7 @@ class BudgetScope internal constructor(
             completionTokens = tracker.completionTokens,
             totalTokens = tracker.totalTokens,
             estimatedCostUsd = cost,
-            softLimitBreachCount = softLimitBreachCount.get(),
+            softLimitBreachCount = tracker.softLimitBreachCount,
             hardLimitBreached = tracker.isAboveHardLimit(),
             durationMs = durationMs,
             percentUsed = tracker.percentUsed(),

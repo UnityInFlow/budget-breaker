@@ -192,6 +192,35 @@ class BudgetCircuitBreakerTest {
     }
 
     @Test
+    fun `getAllReports reports live soft breach count for an in-flight agent`() = runTest {
+        val softBudget = AgentBudget(
+            model = "claude-sonnet-4-6",
+            hardLimitTokens = 1000,
+            softLimitTokens = 100,
+        )
+        val breaker = BudgetCircuitBreaker(softBudget)
+        val gate = CompletableDeferred<Unit>()
+
+        val run = launch {
+            breaker.withBudget("live-agent") {
+                trackCall(promptTokens = 200, completionTokens = 50) // breaches soft limit
+                gate.await() // hold the agent in-flight
+            }
+        }
+
+        // Wait until the in-flight agent has tracked the breaching call
+        while ((breaker.getAllReports()["live-agent"]?.report?.totalTokens ?: 0L) == 0L) yield()
+
+        val snapshot = breaker.getAllReports()["live-agent"]
+        snapshot shouldNotBe null
+        snapshot!!.running shouldBe true // safe: asserted non-null above
+        snapshot.report.softLimitBreachCount shouldBe 1
+
+        gate.complete(Unit)
+        run.join()
+    }
+
+    @Test
     fun `getActiveTrackerCount returns zero when no agents in flight`() = runTest {
         val breaker = BudgetCircuitBreaker(budget)
 
