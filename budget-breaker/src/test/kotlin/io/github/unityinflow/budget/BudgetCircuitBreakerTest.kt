@@ -145,4 +145,30 @@ class BudgetCircuitBreakerTest {
         breaker.getReport("agent-1")?.totalTokens shouldBe 150
         breaker.getReport("agent-2")?.totalTokens shouldBe 300
     }
+
+    @Test
+    fun `CallTracked event carries model from budget`() = runTest {
+        val breaker = BudgetCircuitBreaker(budget)
+        val collected = mutableListOf<BudgetEvent>()
+
+        val eventJob = launch {
+            breaker.events.collect { collected.add(it) }
+        }
+
+        // Yield to let the collector subscribe before emitting
+        kotlinx.coroutines.yield()
+
+        breaker.withBudget("agent-model-test") {
+            trackCall(promptTokens = 100, completionTokens = 50)
+        }
+
+        // Yield to let collector process buffered events
+        kotlinx.coroutines.yield()
+        eventJob.cancel()
+
+        val callTrackedEvents = collected.filterIsInstance<BudgetEvent.CallTracked>()
+        callTrackedEvents.size shouldBe 1
+        callTrackedEvents.first().model shouldBe "claude-sonnet-4-6"
+        callTrackedEvents.first().agentId shouldBe "agent-model-test"
+    }
 }
