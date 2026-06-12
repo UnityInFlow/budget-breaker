@@ -10,7 +10,7 @@
 
 **Goal:** Spring Boot integration (auto-config, Actuator, Micrometer) plus core+starter v0.1.0 release to Maven Central.
 **Scope:** SPRING-01 through SPRING-03, REL-01
-**Plans:** 4 plans
+**Plans:** 5 plans (4 original + 1 gap closure)
 Plans:
 **Wave 1**
 
@@ -28,5 +28,9 @@ Plans:
 
 - [x] 02-04-PLAN.md — @SpringBootTest smoke test, nmcp aggregation + v0.1.0 bump, README Spring section (Wave 4) ✅ 2026-06-12
 
+**Gap Closure** *(closes CR-01, CR-02 from 02-VERIFICATION.md)*
+
+- [ ] 02-05-PLAN.md — @ConditionalOnClass guards for Actuator/Micrometer beans + try/catch resilience in both event collectors (gap closure)
+
 ---
-*Last updated: 2026-06-12 (Phase 02 complete — all 4 plans done)*
+*Last updated: 2026-06-12 (Phase 02 gap closure planned — 02-05 closes 2 BLOCKER gaps)*
