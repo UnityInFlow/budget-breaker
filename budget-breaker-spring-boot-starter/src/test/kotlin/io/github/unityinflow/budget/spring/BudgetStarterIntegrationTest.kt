@@ -7,12 +7,13 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.yield
 import org.assertj.core.api.Assertions.assertThat
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.boot.autoconfigure.ImportAutoConfiguration
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
-import org.springframework.test.context.ContextConfiguration
 import org.springframework.test.context.TestPropertySource
 
 /**
@@ -24,10 +25,17 @@ import org.springframework.test.context.TestPropertySource
  *    [MeterRegistry] with the correct agent tag and values after a tracked call.
  * 2. The [BudgetEndpoint] reports the agent via [BudgetCircuitBreaker.getAllReports].
  *
- * No [Thread.sleep] — yields via [kotlinx.coroutines.yield] and [delay] (coroutines only).
+ * No blocking sleeps — yields via [kotlinx.coroutines.yield] and [delay] (coroutines only).
+ *
+ * Uses [@SpringBootTest] to boot a real Spring application context (D-19 layer 2).
+ *
+ * **[MetricsEventCollector] binding:** The collector implements [io.micrometer.core.instrument.binder.MeterBinder].
+ * Spring Boot's full Micrometer auto-config would call [MetricsEventCollector.bindTo] automatically,
+ * but since this test uses a minimal context without that auto-config, [bindTo] is called
+ * explicitly in [@BeforeEach] before emitting events. This matches the production lifecycle where
+ * Spring Boot calls [bindTo] before [SmartLifecycle.start].
  */
 @SpringBootTest(classes = [BudgetStarterIntegrationTest.TestConfig::class])
-@ContextConfiguration(classes = [BudgetStarterIntegrationTest.TestConfig::class])
 @TestPropertySource(
     properties = [
         "budget-breaker.default-model=claude-sonnet-4-6",
@@ -38,19 +46,27 @@ import org.springframework.test.context.TestPropertySource
 class BudgetStarterIntegrationTest {
 
     @Autowired
-    private lateinit var breaker: BudgetCircuitBreaker
+    lateinit var breaker: BudgetCircuitBreaker
 
     @Autowired
-    private lateinit var registry: MeterRegistry
+    lateinit var registry: MeterRegistry
 
     @Autowired
-    private lateinit var endpoint: BudgetEndpoint
+    lateinit var endpoint: BudgetEndpoint
 
     @Autowired
-    private lateinit var collector: MetricsEventCollector
+    lateinit var collector: MetricsEventCollector
+
+    @BeforeEach
+    fun bindCollectorToRegistry() {
+        // Spring Boot's MeterRegistryAutoConfiguration normally calls bindTo() automatically.
+        // In this minimal test context, we bind explicitly so counters are registered.
+        // bindTo() is idempotent — safe to call on every test method.
+        collector.bindTo(registry)
+    }
 
     @Test
-    fun `gen_ai counters appear in MeterRegistry after a tracked call`() = runBlocking {
+    fun `gen_ai counters appear in MeterRegistry after a tracked call`() = runBlocking<Unit> {
         // Ensure the collector has subscribed to the events Flow.
         // SmartLifecycle.start() is called by Spring during context refresh;
         // yield here lets the coroutine dispatcher process the subscription before
@@ -82,7 +98,7 @@ class BudgetStarterIntegrationTest {
     }
 
     @Test
-    fun `budget endpoint reports the tracked agent after a call`() = runBlocking {
+    fun `budget endpoint reports the tracked agent after a call`() = runBlocking<Unit> {
         yield()
 
         breaker.withBudget("test-agent") {
@@ -102,9 +118,7 @@ class BudgetStarterIntegrationTest {
      * in assertions. [SimpleMeterRegistry] lives in `micrometer-core` (RESEARCH A1).
      */
     @Configuration(proxyBeanMethods = false)
-    @org.springframework.boot.autoconfigure.ImportAutoConfiguration(
-        BudgetBreakerAutoConfiguration::class,
-    )
+    @ImportAutoConfiguration(BudgetBreakerAutoConfiguration::class)
     class TestConfig {
         @Bean
         fun meterRegistry(): MeterRegistry = SimpleMeterRegistry()
