@@ -74,8 +74,15 @@ class BudgetBreakerAutoConfiguration {
      * Exposed as a separate bean so both [budgetCircuitBreaker] and any metrics collector
      * share the exact same pricing configuration (D-11: cost counter uses the same overrides
      * as the breaker).
+     *
+     * Guarded with [@ConditionalOnMissingBean][ConditionalOnMissingBean]: a user-defined
+     * [ModelPricing] bean wins, instead of producing a `NoUniqueBeanDefinitionException`
+     * at the by-type injection points. Applications that override [budgetCircuitBreaker]
+     * (D-17) should also provide a matching [ModelPricing] bean so the metrics collector's
+     * cost counter stays in sync with the pricing inside their breaker (D-11 invariant).
      */
     @Bean
+    @ConditionalOnMissingBean
     fun budgetPricing(properties: BudgetBreakerProperties): ModelPricing =
         ModelPricing(
             overrides = properties.pricing.mapValues { (_, v) ->

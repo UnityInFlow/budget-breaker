@@ -41,6 +41,18 @@ class BudgetBreakerAutoConfigurationTest {
     }
 
     @Test
+    fun `honors user-defined ModelPricing bean`() {
+        contextRunner
+            .withUserConfiguration(CustomPricingConfig::class.java)
+            .run { ctx ->
+                assertThat(ctx).hasNotFailed()
+                assertThat(ctx).hasSingleBean(ModelPricing::class.java)
+                assertThat(ctx.getBean(ModelPricing::class.java))
+                    .isSameAs(ctx.getBean("customPricing"))
+            }
+    }
+
+    @Test
     fun `validates invalid property combination at startup`() {
         contextRunner
             .withPropertyValues(
@@ -149,6 +161,12 @@ class BudgetBreakerAutoConfigurationTest {
     internal class CustomBreakerConfig {
         @Bean("customBreaker")
         fun customBreaker(): BudgetCircuitBreaker = BudgetCircuitBreaker()
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    internal class CustomPricingConfig {
+        @Bean("customPricing")
+        fun customPricing(): ModelPricing = ModelPricing()
     }
 
     /**
