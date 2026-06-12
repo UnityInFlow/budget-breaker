@@ -245,15 +245,93 @@ Cost estimation with hardcoded defaults and runtime overrides.
 | `estimateCost(model, promptTokens, completionTokens)` | Estimate cost in USD |
 | `ModelPricing.estimateCost(...)` (companion) | Static convenience using default pricing |
 
-## Spring Boot Integration
+## Spring Boot
 
-Coming in v0.1.0:
+budget-breaker ships a first-class Spring Boot starter that wires auto-configuration,
+an Actuator endpoint, and Micrometer metrics with zero boilerplate.
 
-- `@ConfigurationProperties`-based auto-configuration
-- `/actuator/budget` endpoint
-- Micrometer metrics integration (counters, gauges, timers)
+The core library keeps **zero Spring dependency** -- it works in any Kotlin project.
+The starter is an optional add-on for Spring Boot 3.4+ applications.
 
-The core library has zero Spring dependency -- it works in any Kotlin project.
+### Installation
+
+```kotlin
+// Gradle (Kotlin DSL) — transitively brings budget-breaker core
+dependencies {
+    implementation("io.github.unityinflow:budget-breaker-spring-boot-starter:0.1.0")
+}
+```
+
+### Configuration
+
+```yaml
+# application.yml
+budget-breaker:
+  default-model: claude-sonnet-4-6  # default LLM model for cost estimation
+  hard-limit-tokens: 100000          # cancels the agent coroutine when exceeded
+  soft-limit-tokens: 80000           # triggers WARN log + Flow event when reached
+  pricing:
+    gpt-4o:
+      input-per-million: 2.50
+      output-per-million: 10.0
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,budget        # opt-in — budget endpoint is NOT auto-exposed
+```
+
+Invalid combinations (e.g. `soft-limit-tokens > hard-limit-tokens`) cause a **startup failure**
+with a clear error message so misconfiguration is caught early.
+
+### Usage
+
+Inject the auto-configured `BudgetCircuitBreaker` bean and call `withBudget` as usual:
+
+```kotlin
+@Service
+class AgentService(private val breaker: BudgetCircuitBreaker) {
+
+    suspend fun runAgent(): String =
+        breaker.withBudget("my-agent") {
+            val result = callLlm()
+            trackCall(promptTokens = result.promptTokens, completionTokens = result.completionTokens)
+            result.text
+        }
+}
+```
+
+**Per-agent budgets** are code-side: pass `budget = AgentBudget(...)` to `withBudget`.
+There is no per-agent configuration in `application.yml` in this release.
+
+### Actuator Endpoint
+
+After opting in via `management.endpoints.web.exposure.include: budget`:
+
+```
+GET /actuator/budget              # all tracked agents (in-flight + completed)
+GET /actuator/budget/{agentId}    # full BudgetReport for one agent
+```
+
+The health indicator at `GET /actuator/health` always returns **UP** with budget detail keys
+(`agentsTracked`, `softBreaches`, `hardBreaches`). Budget breaches never flip health to DOWN
+so Kubernetes liveness probes are not affected.
+
+### Micrometer Metrics
+
+The starter registers the following meters as events flow through the circuit breaker:
+
+| Meter | Type | Tags | Description |
+|---|---|---|---|
+| `gen_ai.client.token.usage.input` | Counter | `agent`, `model` | Input tokens consumed |
+| `gen_ai.client.token.usage.output` | Counter | `agent`, `model` | Output tokens consumed |
+| `budget.breaker.cost.usd` | Counter | `agent`, `model` | Estimated cost in USD |
+| `budget.breaker.breach` | Counter | `agent`, `type=soft\|hard` | Limit breach events |
+| `budget.breaker.usage.ratio` | Gauge | `agent` | Token usage as fraction of hard limit (0–1+) |
+
+Metric names follow the OTel GenAI semconv convention and are recognized by
+[token-dashboard](https://github.com/UnityInFlow/token-dashboard)'s OTLP mapper.
 
 ## Requirements
 
