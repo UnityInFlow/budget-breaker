@@ -1,36 +1,28 @@
 # Roadmap: budget-breaker
 
-## Phase 1: Core Library (Week 7)
+## Milestones
 
-**Goal:** Pure Kotlin library with budget enforcement, no Spring dependency.
-**Scope:** CORE-01 through CORE-06
-**Deliverables:** AgentBudget, TokenTracker, BudgetCircuitBreaker, BudgetException, ModelPricing, BudgetReport + tests
+- ✅ **v1.0 Core + Spring Boot Starter** — Phases 1-2 (shipped 2026-06-12) — [archive](milestones/v1.0-ROADMAP.md)
+- 📋 **Next milestone** — not yet planned (`/gsd-new-milestone`)
 
-## Phase 2: Spring Boot Starter + Release (Weeks 8-9)
+## Phases
 
-**Goal:** Spring Boot integration (auto-config, Actuator, Micrometer) plus core+starter v0.1.0 release to Maven Central.
-**Scope:** SPRING-01 through SPRING-03, REL-01
-**Plans:** 5/5 plans complete
-Plans:
-**Wave 1**
+<details>
+<summary>✅ v1.0 Core + Spring Boot Starter (Phases 1-2) — SHIPPED 2026-06-12</summary>
 
-- [x] 02-01-PLAN.md — Core D-08 live-snapshot + aggregate-breach enhancement, CallTracked.model, starter build setup (Wave 1) ✅ 2026-06-12
+- [x] Phase 1: Core Library (Week 7) — shipped as v0.0.1 to Maven Central 2026-05-11 (pre-dates plan tracking)
+- [x] Phase 2: Spring Boot Starter + Release (Weeks 8-9) (5/5 plans) — completed 2026-06-12
 
-**Wave 2** *(blocked on Wave 1 completion)*
+Full details: [milestones/v1.0-ROADMAP.md](milestones/v1.0-ROADMAP.md) · Phase artifacts: `milestones/v1.0-phases/`
 
-- [x] 02-02-PLAN.md — Leaf Spring components: BudgetBreakerProperties, BudgetEndpoint, HealthIndicator, MetricsEventCollector (Wave 2) ✅ 2026-06-12
+</details>
 
-**Wave 3** *(blocked on Wave 2 completion)*
+## Progress
 
-- [x] 02-03-PLAN.md — Auto-config wiring, SLF4JEventLogger, imports file, ApplicationContextRunner unit tests (Wave 3) ✅ 2026-06-12
-
-**Wave 4** *(blocked on Wave 3 completion)*
-
-- [x] 02-04-PLAN.md — @SpringBootTest smoke test, nmcp aggregation + v0.1.0 bump, README Spring section (Wave 4) ✅ 2026-06-12
-
-**Gap Closure** *(closes CR-01, CR-02 from 02-VERIFICATION.md)*
-
-- [x] 02-05-PLAN.md — @ConditionalOnClass guards for Actuator/Micrometer beans + try/catch resilience in both event collectors (gap closure)
+| Phase | Milestone | Plans Complete | Status | Completed |
+|-------|-----------|----------------|--------|-----------|
+| 1. Core Library | v1.0 | — (pre-tracking) | Complete | 2026-05-11 |
+| 2. Spring Boot Starter + Release | v1.0 | 5/5 | Complete | 2026-06-12 |
 
 ---
-*Last updated: 2026-06-12 (Phase 02 gap closure planned — 02-05 closes 2 BLOCKER gaps)*
+*Last updated: 2026-06-12 (v1.0 milestone archived)*
