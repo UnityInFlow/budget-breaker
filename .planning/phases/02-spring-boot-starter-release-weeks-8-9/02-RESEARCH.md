@@ -790,22 +790,25 @@ private fun ensureRatioGauge(agentId: String, registry: MeterRegistry) {
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Model tag resolution for `CallTracked` events**
    - What we know: `CallTracked` has no `model` field; `AgentBudget.model` is set per agent
    - What's unclear: `BudgetCircuitBreaker` does not currently expose a map from `agentId` to `AgentBudget`
    - Recommendation: Add `model: String` to `BudgetEvent.CallTracked` in the core D-08 enhancement — cleanest solution, no lookup needed
+   - **RESOLVED:** Option A chosen — `model: String` appended to `BudgetEvent.CallTracked`, populated from `tracker.model` in `BudgetScope.trackCall`. Planned in 02-01 Task 1. No agentId→AgentBudget lookup map needed.
 
 2. **`gen.ai` vs `gen_ai` metric naming**
    - What we know: CONTEXT.md D-09 specifies `gen_ai.client.token.usage.input` (underscore prefix, dot separator); Micrometer uses dots
    - What's unclear: Whether `gen_ai` uses underscores within the prefix (`gen_ai.`) or the whole name uses dots
    - Recommendation: Follow Micrometer convention — use dots throughout (`gen.ai.client.token.usage.input`); the OTel exporter normalizes to underscores. Cross-verify against 06-token-dashboard `OtlpMetricMapper.kt`.
+   - **RESOLVED:** Underscore-in-prefix, dots-elsewhere confirmed: `gen_ai.client.token.usage.input` / `.output` are the exact strings `06-token-dashboard/OtlpMetricMapper.kt` matches. Meter names are pinned to those literals in 02-02 Task 3 (D-09); do not rename to `gen.ai.*`.
 
 3. **kapt vs no-kapt for configuration-processor**
    - What we know: kapt is maintenance-only; KSP support for SB config processor not yet available; machine runs JVM 24
    - What's unclear: Whether kapt toolchain successfully compiles against JVM 21 target when the host JVM is 24
    - Recommendation: Skip kapt initially. Add a hand-written `additional-spring-configuration-metadata.json` for IDE hints. Revisit kapt/KSP when KSP support lands in spring-boot.
+   - **RESOLVED:** No-kapt chosen — the starter build (02-01 Task 3) does NOT add kapt (verified by a `grep -c kapt == 0` gate). IDE config metadata hints are optional and deferred; revisit when KSP support lands in spring-boot.
 
 ---
 
