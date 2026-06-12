@@ -26,7 +26,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 02-04-PLAN.md — @SpringBootTest smoke test, nmcp aggregation + v0.1.0 bump, README Spring section (Wave 4)
+- [x] 02-04-PLAN.md — @SpringBootTest smoke test, nmcp aggregation + v0.1.0 bump, README Spring section (Wave 4) ✅ 2026-06-12
 
 ---
-*Last updated: 2026-06-12*
+*Last updated: 2026-06-12 (Phase 02 complete — all 4 plans done)*

@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: Executing Phase 02
-last_updated: "2026-06-12T13:00:00.000Z"
+status: Phase 02 Complete
+last_updated: "2026-06-12T12:46:31.000Z"
 progress:
   total_phases: 3
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 4
-  completed_plans: 3
-  percent: 75
+  completed_plans: 4
+  percent: 100
 ---
 
 # State: budget-breaker
@@ -77,9 +77,13 @@ Remaining Phase 2 scope: Spring Boot starter + integrations (#3–#6, #8).
 - No `onSoftLimit` wiring in auto-config — extension point is `BudgetCircuitBreaker.events` Flow (D-18)
 - `slf4j-api:2.0.16` added as `compileOnly` to starter (not transitively available from compileOnly Spring Boot deps)
 - `@Configuration(proxyBeanMethods=false)` required for Kotlin final inner class in `ApplicationContextRunner` tests
+- `@BeforeEach bindTo(registry)` in `@SpringBootTest` test — minimal context doesn't include Spring Boot Micrometer auto-config, bindTo() must be called explicitly
+- `runBlocking<Unit>` explicit type annotation required for JUnit 5 test discovery with Kotlin coroutines in @SpringBootTest tests
+- KGP 2.1.0 → 2.1.21 upgrade — getDependencyProject() removed in Gradle 9.0; KGP 2.1.21 fixes the DeprecatedPomDependenciesRewriter incompatibility
 
 ## Session Notes
 
+- 2026-06-12: Phase 02, Plan 04 complete. @SpringBootTest smoke test (D-19 layer 2), v0.1.0 version bump, starter in nmcp aggregation, README Spring Boot section. Rule 1 fixes: runBlocking<Unit> for JUnit test discovery, @BeforeEach bindTo() for MeterBinder wiring, KGP 2.1.21 for Gradle 9 compat.
 - 2026-06-12: Phase 02, Plan 03 complete. SLF4JEventLogger (D-03 WARN logging), BudgetBreakerAutoConfiguration (@AutoConfiguration wiring 5 beans), AutoConfiguration.imports. 4 ApplicationContextRunner tests green. Rule 3 fixes: slf4j-api compileOnly, @Configuration(proxyBeanMethods=false) for Kotlin final class.
 - 2026-06-12: Phase 02, Plan 02 complete. Four Spring leaf components: BudgetBreakerProperties, BudgetEndpoint, BudgetBreakerHealthIndicator, MetricsEventCollector. TDD RED/GREEN on properties. Rule 3 fix: coroutines dep added to starter.
 - 2026-06-12: Phase 02, Plan 01 complete. Core D-08 enhancement (BudgetSnapshot, live-snapshot APIs), CallTracked.model field, starter build.gradle.kts wired.
@@ -88,4 +92,4 @@ Remaining Phase 2 scope: Spring Boot starter + integrations (#3–#6, #8).
 - 2026-04-01: Phase 1 complete. All core classes implemented, tests passing, v0.0.1 tagged and released.
 
 ---
-*Last updated: 2026-06-12 (Plan 03 complete)*
+*Last updated: 2026-06-12 (Plan 04 complete — Phase 02 COMPLETE)*
