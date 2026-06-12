@@ -18,11 +18,11 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 02-02-PLAN.md — Leaf Spring components: BudgetBreakerProperties, BudgetEndpoint, HealthIndicator, MetricsEventCollector (Wave 2)
+- [x] 02-02-PLAN.md — Leaf Spring components: BudgetBreakerProperties, BudgetEndpoint, HealthIndicator, MetricsEventCollector (Wave 2) ✅ 2026-06-12
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 02-03-PLAN.md — Auto-config wiring, SLF4JEventLogger, imports file, ApplicationContextRunner unit tests (Wave 3)
+- [x] 02-03-PLAN.md — Auto-config wiring, SLF4JEventLogger, imports file, ApplicationContextRunner unit tests (Wave 3) ✅ 2026-06-12
 
 **Wave 4** *(blocked on Wave 3 completion)*
 

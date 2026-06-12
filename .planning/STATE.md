@@ -8,8 +8,8 @@ progress:
   total_phases: 3
   completed_phases: 0
   total_plans: 4
-  completed_plans: 2
-  percent: 50
+  completed_plans: 3
+  percent: 75
 ---
 
 # State: budget-breaker
@@ -73,9 +73,14 @@ Remaining Phase 2 scope: Spring Boot starter + integrations (#3–#6, #8).
 - Metric names pinned to `gen_ai.client.token.usage.input/.output` (OtlpMetricMapper.kt contract)
 - Gauge backed by `AtomicReference<Double>` in ConcurrentHashMap for Micrometer strong-reference requirement
 - `kotlinx-coroutines-core` added as `implementation` to starter (core uses implementation not api)
+- `budgetPricing` exposed as separate `@Bean` so breaker and `MetricsEventCollector` share exact same `ModelPricing` instance (D-11 cost consistency)
+- No `onSoftLimit` wiring in auto-config — extension point is `BudgetCircuitBreaker.events` Flow (D-18)
+- `slf4j-api:2.0.16` added as `compileOnly` to starter (not transitively available from compileOnly Spring Boot deps)
+- `@Configuration(proxyBeanMethods=false)` required for Kotlin final inner class in `ApplicationContextRunner` tests
 
 ## Session Notes
 
+- 2026-06-12: Phase 02, Plan 03 complete. SLF4JEventLogger (D-03 WARN logging), BudgetBreakerAutoConfiguration (@AutoConfiguration wiring 5 beans), AutoConfiguration.imports. 4 ApplicationContextRunner tests green. Rule 3 fixes: slf4j-api compileOnly, @Configuration(proxyBeanMethods=false) for Kotlin final class.
 - 2026-06-12: Phase 02, Plan 02 complete. Four Spring leaf components: BudgetBreakerProperties, BudgetEndpoint, BudgetBreakerHealthIndicator, MetricsEventCollector. TDD RED/GREEN on properties. Rule 3 fix: coroutines dep added to starter.
 - 2026-06-12: Phase 02, Plan 01 complete. Core D-08 enhancement (BudgetSnapshot, live-snapshot APIs), CallTracked.model field, starter build.gradle.kts wired.
 - 2026-05-11: Sonatype/Maven Central publishing infra added; v0.0.1 published as `io.github.unityinflow:budget-breaker:0.0.1` (issue #7 closed).
@@ -83,4 +88,4 @@ Remaining Phase 2 scope: Spring Boot starter + integrations (#3–#6, #8).
 - 2026-04-01: Phase 1 complete. All core classes implemented, tests passing, v0.0.1 tagged and released.
 
 ---
-*Last updated: 2026-06-12*
+*Last updated: 2026-06-12 (Plan 03 complete)*
