@@ -83,6 +83,36 @@ class BudgetCircuitBreakerTest {
     }
 
     @Test
+    fun `throwing soft limit callback does not abort the run and the event is still emitted`() = runTest {
+        val breaker = BudgetCircuitBreaker(
+            budget,
+            onSoftLimit = { error("callback boom") },
+        )
+        val collected = mutableListOf<BudgetEvent>()
+
+        val eventJob = launch {
+            breaker.events.collect { collected.add(it) }
+        }
+
+        // Yield to let the collector subscribe before emitting
+        yield()
+
+        val result = breaker.withBudget("callback-agent") {
+            trackCall(promptTokens = 500, completionTokens = 350)
+            "survived"
+        }
+
+        // Yield to let collector process buffered events
+        yield()
+        eventJob.cancel()
+
+        result shouldBe "survived"
+        val softEvents = collected.filterIsInstance<BudgetEvent.SoftLimitReached>()
+        softEvents.size shouldBe 1
+        softEvents.first().agentId shouldBe "callback-agent"
+    }
+
+    @Test
     fun `generates report after completion`() = runTest {
         val breaker = BudgetCircuitBreaker(budget)
 

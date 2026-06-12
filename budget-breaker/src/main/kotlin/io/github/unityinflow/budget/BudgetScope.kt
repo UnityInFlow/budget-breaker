@@ -1,6 +1,9 @@
 package io.github.unityinflow.budget
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableSharedFlow
+import java.util.logging.Level
+import java.util.logging.Logger
 
 /**
  * Scope DSL for tracking LLM calls within a budget.
@@ -17,6 +20,11 @@ class BudgetScope internal constructor(
     /**
      * Record token usage from an LLM call.
      * Checks soft/hard limits after recording.
+     *
+     * On the first soft limit breach, the [BudgetEvent.SoftLimitReached] event is emitted
+     * **before** the `onSoftLimit` callback runs, and a throwing callback is logged at
+     * WARNING and swallowed — a failing logging/alerting hook never aborts the agent run
+     * and never suppresses the breach event ([CancellationException] is always re-thrown).
      *
      * @throws BudgetHardLimitException if hard limit is exceeded
      */
@@ -54,8 +62,8 @@ class BudgetScope internal constructor(
 
         if (tracker.isAboveSoftLimit() && !softLimitFired.getAndSet(true)) {
             tracker.recordSoftLimitBreach()
-            val report = buildReport(0)
-            onSoftLimit?.invoke(report)
+            // Emit the event BEFORE invoking the user callback so a throwing callback can
+            // never suppress the breach from event consumers (metrics, WARN logging).
             eventFlow.emit(
                 BudgetEvent.SoftLimitReached(
                     agentId = tracker.agentId,
@@ -64,6 +72,20 @@ class BudgetScope internal constructor(
                     percentUsed = tracker.percentUsed(),
                 )
             )
+            try {
+                onSoftLimit?.invoke(buildReport(0))
+            } catch (e: CancellationException) {
+                throw e // never swallow coroutine cancellation
+            } catch (e: Exception) {
+                // A failing user callback (logging/alerting hook) must not abort the agent
+                // run. The core module stays dependency-free, so log via JUL — Spring Boot
+                // applications bridge JUL to SLF4J/Logback by default.
+                log.log(
+                    Level.WARNING,
+                    "budget-breaker onSoftLimit callback failed for agent '${tracker.agentId}'",
+                    e,
+                )
+            }
         }
     }
 
@@ -83,5 +105,9 @@ class BudgetScope internal constructor(
             durationMs = durationMs,
             percentUsed = tracker.percentUsed(),
         )
+    }
+
+    private companion object {
+        val log: Logger = Logger.getLogger(BudgetScope::class.java.name)
     }
 }
