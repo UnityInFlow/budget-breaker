@@ -35,6 +35,14 @@ class BudgetCircuitBreaker(
      * Execute [block] within a budget-tracked scope.
      * Use [BudgetScope.trackCall] inside the block to record token usage.
      *
+     * **Concurrency contract:** each [agentId] may run inside at most one concurrent
+     * [withBudget] block. A second concurrent call with the same id fails fast instead of
+     * silently corrupting the first run's tracking state (snapshot under-reporting and
+     * interleaved reports). Sequential reuse of an id is fine — the completed report is
+     * simply replaced by the latest run.
+     *
+     * @throws IllegalArgumentException if [agentId] is already running inside another
+     *   concurrent [withBudget] block
      * @throws BudgetHardLimitException if hard limit is exceeded
      */
     suspend fun <T> withBudget(
@@ -46,8 +54,11 @@ class BudgetCircuitBreaker(
         val scope = BudgetScope(tracker, pricing, onSoftLimit, _events)
         val startTime = System.currentTimeMillis()
 
-        // Register tracker as in-flight before the block executes
-        activeTrackers[agentId] = tracker
+        // Register tracker as in-flight before the block executes. Fail fast on collision —
+        // an unconditional overwrite would let the first run's `finally` remove the second
+        // run's tracker, corrupting live snapshots and mixing reports of interleaved runs.
+        val previous = activeTrackers.putIfAbsent(agentId, tracker)
+        require(previous == null) { "Agent '$agentId' is already running inside withBudget" }
 
         return try {
             coroutineScope {
@@ -56,8 +67,10 @@ class BudgetCircuitBreaker(
         } catch (e: BudgetHardLimitException) {
             throw e
         } finally {
-            // Remove from active trackers first so the agent never appears both running and completed
-            activeTrackers.remove(agentId)
+            // Remove from active trackers first so the agent never appears both running and
+            // completed. Two-arg remove deregisters only THIS run's tracker, never a
+            // tracker registered by another run.
+            activeTrackers.remove(agentId, tracker)
             val durationMs = System.currentTimeMillis() - startTime
             reports[agentId] = scope.buildReport(durationMs)
         }

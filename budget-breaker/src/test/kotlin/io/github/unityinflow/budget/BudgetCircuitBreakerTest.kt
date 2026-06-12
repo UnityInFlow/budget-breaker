@@ -4,8 +4,10 @@ import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.doubles.shouldBeGreaterThan
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.yield
 import org.junit.jupiter.api.Test
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -144,6 +146,33 @@ class BudgetCircuitBreakerTest {
 
         breaker.getReport("agent-1")?.totalTokens shouldBe 150
         breaker.getReport("agent-2")?.totalTokens shouldBe 300
+    }
+
+    @Test
+    fun `rejects a concurrent withBudget run with a duplicate agentId`() = runTest {
+        val breaker = BudgetCircuitBreaker(budget)
+        val gate = CompletableDeferred<Unit>()
+
+        val firstRun = launch {
+            breaker.withBudget("dup-agent") {
+                trackCall(promptTokens = 10, completionTokens = 5)
+                gate.await()
+            }
+        }
+
+        // Let the first run register its in-flight tracker
+        while (breaker.getActiveTrackerCount() == 0) yield()
+
+        shouldThrow<IllegalArgumentException> {
+            breaker.withBudget("dup-agent") { }
+        }
+
+        gate.complete(Unit)
+        firstRun.join()
+
+        // The first run's tracking state must be intact — not corrupted by the rejected run
+        breaker.getReport("dup-agent")?.totalTokens shouldBe 15
+        breaker.getActiveTrackerCount() shouldBe 0
     }
 
     // ---- Task 2: snapshot and aggregate-breach API tests ----
