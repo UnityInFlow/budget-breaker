@@ -7,11 +7,13 @@ import io.micrometer.core.instrument.Counter
 import io.micrometer.core.instrument.Gauge
 import io.micrometer.core.instrument.MeterRegistry
 import io.micrometer.core.instrument.binder.MeterBinder
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import org.slf4j.LoggerFactory
 import org.springframework.context.SmartLifecycle
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
@@ -42,8 +44,10 @@ import java.util.concurrent.atomic.AtomicReference
  * - [start] sets running = true and launches the Flow collector coroutine
  * - [stop] sets running = false and cancels the [CoroutineScope]
  *
- * The [CoroutineScope] uses [SupervisorJob] + [Dispatchers.Default] so that a single
- * event-handling failure does not cancel the entire collection loop.
+ * The [CoroutineScope] uses [SupervisorJob] + [Dispatchers.Default] to manage scope
+ * lifecycle. Resilience to per-event handler failures is provided by the try/catch inside
+ * the collect lambda, which logs at WARN and continues to the next event. [CancellationException]
+ * is always re-thrown inside the catch to preserve clean shutdown when [stop] cancels the scope.
  *
  * **Scope management:** scope is fully managed by [SmartLifecycle] — never uses the
  * global coroutine scope — so there is no resource leak on Spring context shutdown
@@ -62,6 +66,7 @@ class MetricsEventCollector(
     private val pricing: ModelPricing,
 ) : MeterBinder, SmartLifecycle {
 
+    private val log = LoggerFactory.getLogger(MetricsEventCollector::class.java)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val running = AtomicBoolean(false)
     private val registryRef = AtomicReference<MeterRegistry?>(null)
@@ -94,10 +99,15 @@ class MetricsEventCollector(
         scope.launch {
             breaker.events.collect { event ->
                 val registry = registryRef.get() ?: return@collect
-                when (event) {
-                    is BudgetEvent.CallTracked -> handleCallTracked(event, registry)
-                    is BudgetEvent.SoftLimitReached -> handleSoftLimitReached(event, registry)
-                    is BudgetEvent.HardLimitExceeded -> handleHardLimitExceeded(event, registry)
+                try {
+                    when (event) {
+                        is BudgetEvent.CallTracked -> handleCallTracked(event, registry)
+                        is BudgetEvent.SoftLimitReached -> handleSoftLimitReached(event, registry)
+                        is BudgetEvent.HardLimitExceeded -> handleHardLimitExceeded(event, registry)
+                    }
+                } catch (e: Exception) {
+                    if (e is CancellationException) throw e
+                    log.warn("budget-breaker metrics handler failed for event {}", event, e)
                 }
             }
         }

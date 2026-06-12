@@ -4,9 +4,11 @@ import io.github.unityinflow.budget.AgentBudget
 import io.github.unityinflow.budget.BudgetCircuitBreaker
 import io.github.unityinflow.budget.ModelPricing
 import org.springframework.boot.autoconfigure.AutoConfiguration
+import org.springframework.boot.autoconfigure.condition.ConditionalOnClass
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean
+import org.springframework.context.annotation.Configuration
 
 /**
  * Spring Boot auto-configuration for the budget-breaker starter.
@@ -17,10 +19,16 @@ import org.springframework.context.annotation.Bean
  *   [@ConditionalOnMissingBean][ConditionalOnMissingBean] so user-defined beans win (D-17).
  *   Configured from [BudgetBreakerProperties] (prefix `budget-breaker.*`).
  * - [SLF4JEventLogger] — subscribes to the events Flow and logs soft-limit breaches at WARN (D-03).
+ *   SLF4J is always present on the Spring Boot classpath — no conditional needed.
  * - [MetricsEventCollector] — [io.micrometer.core.instrument.binder.MeterBinder] that drives
- *   Micrometer counters/gauges from budget events (SPRING-03).
- * - [BudgetEndpoint] — Actuator endpoint at `/actuator/budget` (SPRING-02).
- * - [BudgetBreakerHealthIndicator] — always-UP health indicator (D-07).
+ *   Micrometer counters/gauges from budget events (SPRING-03). Registered only when
+ *   `io.micrometer.core.instrument.MeterRegistry` is on the runtime classpath
+ *   (see [MicrometerConfiguration]).
+ * - [BudgetEndpoint] — Actuator endpoint at `/actuator/budget` (SPRING-02). Registered only when
+ *   `org.springframework.boot.actuate.health.HealthIndicator` is on the runtime classpath
+ *   (see [ActuatorConfiguration]).
+ * - [BudgetBreakerHealthIndicator] — always-UP health indicator (D-07). Registered only when
+ *   Actuator is on the runtime classpath (see [ActuatorConfiguration]).
  *
  * ## Zero-Config Boot
  *
@@ -40,6 +48,14 @@ import org.springframework.context.annotation.Bean
  * [BudgetCircuitBreaker.events] — the auto-config does NOT wire a callback bean (D-18).
  * To use a callback, provide your own `BudgetCircuitBreaker` bean.
  *
+ * ## Optional Dependency Design
+ *
+ * `spring-boot-actuator-autoconfigure` and `micrometer-core` are declared `compileOnly` in the
+ * starter. Consumers without those jars get a functional [BudgetCircuitBreaker] with SLF4J event
+ * logging; Actuator and Micrometer observability beans are omitted gracefully via nested
+ * [ActuatorConfiguration] and [MicrometerConfiguration] inner classes guarded by
+ * string-form `@ConditionalOnClass` — so the annotation itself never forces class loading.
+ *
  * ## Discovery
  *
  * Registered via `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`
@@ -55,7 +71,7 @@ class BudgetBreakerAutoConfiguration {
     /**
      * Builds a [ModelPricing] instance from the per-model overrides in [properties].
      *
-     * Exposed as a separate bean so both [budgetCircuitBreaker] and [budgetMetricsCollector]
+     * Exposed as a separate bean so both [budgetCircuitBreaker] and any metrics collector
      * share the exact same pricing configuration (D-11: cost counter uses the same overrides
      * as the breaker).
      */
@@ -96,37 +112,71 @@ class BudgetBreakerAutoConfiguration {
     /**
      * SLF4J WARN logger for soft-limit breach events (D-03).
      *
-     * Subscribes to [BudgetCircuitBreaker.events] via [SmartLifecycle][org.springframework.context.SmartLifecycle].
+     * SLF4J is always present in any Spring Boot application, so no `@ConditionalOnClass`
+     * is needed here. Subscribes to [BudgetCircuitBreaker.events] via
+     * [SmartLifecycle][org.springframework.context.SmartLifecycle].
      */
     @Bean
     fun budgetEventLogger(breaker: BudgetCircuitBreaker): SLF4JEventLogger =
         SLF4JEventLogger(breaker)
 
     /**
-     * Micrometer [io.micrometer.core.instrument.binder.MeterBinder] for budget events (SPRING-03).
+     * Nested configuration registering Actuator beans only when
+     * `org.springframework.boot.actuate.health.HealthIndicator` is present on the runtime
+     * classpath (CR-01 fix).
      *
-     * Uses the shared [pricing] bean so `budget.breaker.cost.usd` cost calculations
-     * honour the same per-model overrides as the breaker (D-11).
+     * Using the string-form `@ConditionalOnClass(name = [...])` ensures the annotation
+     * itself never forces Actuator classes to load when they are absent.
+     *
+     * Spring Boot discovers nested `@Configuration` classes of an imported auto-config
+     * automatically — no explicit import needed.
      */
-    @Bean
-    fun budgetMetricsCollector(
-        breaker: BudgetCircuitBreaker,
-        pricing: ModelPricing,
-    ): MetricsEventCollector = MetricsEventCollector(breaker, pricing)
+    @Configuration(proxyBeanMethods = false)
+    @ConditionalOnClass(name = ["org.springframework.boot.actuate.health.HealthIndicator"])
+    inner class ActuatorConfiguration {
+
+        /**
+         * Actuator endpoint at `/actuator/budget` exposing live agent snapshots (SPRING-02).
+         *
+         * Expose via `management.endpoints.web.exposure.include=budget` in application.yml.
+         */
+        @Bean
+        fun budgetEndpoint(breaker: BudgetCircuitBreaker): BudgetEndpoint =
+            BudgetEndpoint(breaker)
+
+        /**
+         * Always-UP health indicator contributing budget detail keys to `/actuator/health` (D-07).
+         */
+        @Bean
+        fun budgetHealthIndicator(breaker: BudgetCircuitBreaker): BudgetBreakerHealthIndicator =
+            BudgetBreakerHealthIndicator(breaker)
+    }
 
     /**
-     * Actuator endpoint at `/actuator/budget` exposing live agent snapshots (SPRING-02).
+     * Nested configuration registering Micrometer beans only when
+     * `io.micrometer.core.instrument.MeterRegistry` is present on the runtime
+     * classpath (CR-01 fix).
      *
-     * Expose via `management.endpoints.web.exposure.include=budget` in application.yml.
+     * Using the string-form `@ConditionalOnClass(name = [...])` ensures the annotation
+     * itself never forces Micrometer classes to load when they are absent.
+     *
+     * Spring Boot discovers nested `@Configuration` classes of an imported auto-config
+     * automatically — no explicit import needed.
      */
-    @Bean
-    fun budgetEndpoint(breaker: BudgetCircuitBreaker): BudgetEndpoint =
-        BudgetEndpoint(breaker)
+    @Configuration(proxyBeanMethods = false)
+    @ConditionalOnClass(name = ["io.micrometer.core.instrument.MeterRegistry"])
+    inner class MicrometerConfiguration {
 
-    /**
-     * Always-UP health indicator contributing budget detail keys to `/actuator/health` (D-07).
-     */
-    @Bean
-    fun budgetHealthIndicator(breaker: BudgetCircuitBreaker): BudgetBreakerHealthIndicator =
-        BudgetBreakerHealthIndicator(breaker)
+        /**
+         * Micrometer [io.micrometer.core.instrument.binder.MeterBinder] for budget events (SPRING-03).
+         *
+         * Uses the shared [budgetPricing] bean so `budget.breaker.cost.usd` cost calculations
+         * honour the same per-model overrides as the breaker (D-11).
+         */
+        @Bean
+        fun budgetMetricsCollector(
+            breaker: BudgetCircuitBreaker,
+            pricing: ModelPricing,
+        ): MetricsEventCollector = MetricsEventCollector(breaker, pricing)
+    }
 }

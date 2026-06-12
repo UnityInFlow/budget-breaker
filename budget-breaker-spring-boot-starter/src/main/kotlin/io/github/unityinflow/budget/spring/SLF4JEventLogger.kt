@@ -2,6 +2,7 @@ package io.github.unityinflow.budget.spring
 
 import io.github.unityinflow.budget.BudgetCircuitBreaker
 import io.github.unityinflow.budget.BudgetEvent
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -22,8 +23,10 @@ import java.util.concurrent.atomic.AtomicBoolean
  * - [stop] sets running = false and cancels the [CoroutineScope]
  * - [isRunning] reflects the current lifecycle state
  *
- * The [CoroutineScope] uses [SupervisorJob] + [Dispatchers.Default] so that a single
- * event-handling failure does not cancel the entire collection loop.
+ * The [CoroutineScope] uses [SupervisorJob] + [Dispatchers.Default] to manage scope
+ * lifecycle. Resilience to per-event handler failures is provided by the try/catch inside
+ * the collect lambda, which logs at WARN and continues to the next event. [CancellationException]
+ * is always re-thrown inside the catch to preserve clean shutdown when [stop] cancels the scope.
  *
  * **Scope management:** scope is fully managed by [SmartLifecycle] — never uses the
  * global coroutine scope — so there is no resource leak on Spring context shutdown.
@@ -58,16 +61,21 @@ class SLF4JEventLogger(
         running.set(true)
         scope.launch {
             breaker.events.collect { event ->
-                when (event) {
-                    is BudgetEvent.SoftLimitReached -> log.warn(
-                        "Agent '{}' reached soft budget limit: {}/{} tokens ({}%)",
-                        event.agentId,
-                        event.tokensUsed,
-                        event.budgetTokens,
-                        event.percentUsed,
-                    )
-                    is BudgetEvent.HardLimitExceeded -> {}
-                    is BudgetEvent.CallTracked -> {}
+                try {
+                    when (event) {
+                        is BudgetEvent.SoftLimitReached -> log.warn(
+                            "Agent '{}' reached soft budget limit: {}/{} tokens ({}%)",
+                            event.agentId,
+                            event.tokensUsed,
+                            event.budgetTokens,
+                            event.percentUsed,
+                        )
+                        is BudgetEvent.HardLimitExceeded -> {}
+                        is BudgetEvent.CallTracked -> {}
+                    }
+                } catch (e: Exception) {
+                    if (e is CancellationException) throw e
+                    log.warn("budget-breaker event logger handler failed for event {}", event, e)
                 }
             }
         }
