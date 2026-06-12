@@ -15,15 +15,18 @@ Stop agent cost overruns before they happen — with reactive budget enforcement
 - [ ] **CORE-04**: BudgetException sealed hierarchy (SoftLimit, HardLimit)
 - [ ] **CORE-05**: ModelPricing with Claude, GPT-4o, Gemini pricing
 - [ ] **CORE-06**: BudgetReport data class and report generation
-- [ ] **SPRING-01**: Auto-configuration with @ConfigurationProperties
-- [ ] **SPRING-02**: Actuator endpoint /actuator/budget
-- [ ] **SPRING-03**: Micrometer metrics integration
-- [ ] **REL-01**: Published to Maven Central as dev.unityinflow:budget-breaker
+- [x] **SPRING-01**: Auto-configuration with @ConfigurationProperties — Validated in Phase 2: Spring Boot Starter + Release
+- [x] **SPRING-02**: Actuator endpoint /actuator/budget — Validated in Phase 2: Spring Boot Starter + Release
+- [x] **SPRING-03**: Micrometer metrics integration — Validated in Phase 2: Spring Boot Starter + Release
+- [x] **REL-01**: Published to Maven Central as io.github.unityinflow:budget-breaker — Validated in Phase 2: Spring Boot Starter + Release
 
 ### Out of Scope
 - Kafka event streaming — v0.1.0, Kotlin Flows by default
 - Web UI — token-dashboard (Tool #06) handles this
 - LLM API integration — library wraps calls, doesn't make them
+
+## Current State
+Phase 2 complete (2026-06-12) — Spring Boot starter shipped: auto-config with @ConditionalOnClass guards, Actuator endpoint + health indicator, Micrometer metrics, v0.1.0 release prep. Verification passed 13/13 after CR-01/CR-02 gap closure.
 
 ## Context
 - First Kotlin/JVM tool — sets patterns for all future Kotlin tools (#06, #08, #09, #11, #13, #17, #19, #20)
@@ -48,4 +51,4 @@ Stop agent cost overruns before they happen — with reactive budget enforcement
 | AtomicLong for token counter | Thread-safe without coroutine mutex overhead | — Pending |
 
 ---
-*Last updated: 2026-04-02*
+*Last updated: 2026-06-12*
