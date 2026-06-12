@@ -1,5 +1,5 @@
 plugins {
-    kotlin("jvm") version "2.1.0" apply false
+    kotlin("jvm") version "2.1.21" apply false
     id("com.gradleup.nmcp.aggregation")
 }
 
@@ -9,16 +9,16 @@ repositories {
 
 allprojects {
     group = "io.github.unityinflow"
-    version = "0.0.1"
+    version = "0.1.0"
 
     repositories {
         mavenCentral()
     }
 }
 
-// Sonatype Central Portal aggregation. Only the budget-breaker module is
-// published — budget-breaker-spring-boot-starter is a Phase 2 stub with
-// no source files yet and should NOT appear on Maven Central.
+// Sonatype Central Portal aggregation. Both modules are published as of v0.1.0:
+// - budget-breaker (core library)
+// - budget-breaker-spring-boot-starter (Spring Boot auto-configuration)
 
 nmcpAggregation {
     centralPortal {
@@ -31,4 +31,5 @@ nmcpAggregation {
 
 dependencies {
     nmcpAggregation(project(":budget-breaker"))
+    nmcpAggregation(project(":budget-breaker-spring-boot-starter"))
 }

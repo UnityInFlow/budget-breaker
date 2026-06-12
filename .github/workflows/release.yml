@@ -51,9 +51,22 @@ jobs:
           body: |
             budget-breaker **${{ github.ref_name }}** is now available on Maven Central under `io.github.unityinflow`.
 
+            ## Core library
+
             ```kotlin
             dependencies {
                 implementation("io.github.unityinflow:budget-breaker:${{ steps.version.outputs.version }}")
+            }
+            ```
+
+            ## Spring Boot starter (new in v0.1.0)
+
+            Adds `@ConfigurationProperties`-based auto-configuration, `/actuator/budget` endpoint,
+            and Micrometer metrics. Transitively brings the core library.
+
+            ```kotlin
+            dependencies {
+                implementation("io.github.unityinflow:budget-breaker-spring-boot-starter:${{ steps.version.outputs.version }}")
             }
             ```
 
