@@ -8,9 +8,8 @@ repositories {
 }
 
 allprojects {
-    group = "io.github.unityinflow"
-    version = "0.1.0"
-
+    // group and version are defined once in gradle.properties — do not duplicate them
+    // here, or the release workflow's tag-vs-version guard can drift out of sync.
     repositories {
         mavenCentral()
     }
