@@ -1,6 +1,7 @@
 # Phase 2: Spring Boot Starter + Release - Context
 
 **Gathered:** 2026-06-12
+**Updated:** 2026-06-12 (session 2 — D-01–D-15 reviewed and confirmed unchanged; D-16–D-19 added)
 **Status:** Ready for planning
 
 <domain>
@@ -20,6 +21,11 @@ Scope = SPRING-01, SPRING-02, SPRING-03, REL-01 (starter portion). Note: core `i
 - **D-02:** Knobs in this release mirror the core API only: `default-model`, `soft-limit-tokens`, `hard-limit-tokens`, and a `pricing` override map (per-model input/output per-million prices). Behavior enums (`on-soft-limit`, `on-hard-limit`, `PAUSE`) and `alert-webhook` are deferred (see Deferred Ideas).
 - **D-03:** Out of the box, the starter subscribes to the core `events: SharedFlow<BudgetEvent>` and logs soft-limit breaches at WARN via SLF4J — zero-effort visibility for typical Spring users.
 - **D-04:** Zero-config boot works with sensible defaults (e.g. sonnet-class model, 100k hard / 80k soft). Invalid combos (soft >= hard, negative values) fail startup fast with a clear validation message.
+- **D-16:** Property knobs are global-only in v0.1.0 — no `budget-breaker.agents.<id>.*` per-agent map. Per-agent budgets stay code-side via `withBudget(budget = ...)` (document this in the README Spring section). A per-agent yml map can land in v0.2.0 without breaking the existing properties shape.
+
+### Bean Surface (SPRING-01)
+- **D-17:** Auto-config registers exactly ONE app-facing bean: `BudgetCircuitBreaker` built from properties, guarded with `@ConditionalOnMissingBean` so apps can replace it. The `@ConfigurationProperties` class is an internal detail — not part of the documented/committed API. README's `@Autowired` example (D-15) injects the breaker only.
+- **D-18:** The extension point for custom soft-limit behavior is the core `events: SharedFlow<BudgetEvent>` — same path the starter's own WARN logger (D-03) and metrics collector (D-10) use. The auto-config does NOT wire a user-provided `onSoftLimit` callback bean; apps that need the constructor callback define their own `BudgetCircuitBreaker` bean (which D-17's `@ConditionalOnMissingBean` honors).
 
 ### Actuator Endpoint (SPRING-02)
 - **D-05:** `GET /actuator/budget` returns a map of all tracked agents' reports; `GET /actuator/budget/{agentId}` returns one full BudgetReport. Mirrors the `/actuator/metrics` interaction pattern.
@@ -37,6 +43,7 @@ Scope = SPRING-01, SPRING-02, SPRING-03, REL-01 (starter portion). Note: core `i
 - **D-13:** Spring Boot baseline 3.5.x (compile against 3.5; expected to work on 3.4+).
 - **D-14:** Starter must be added to the nmcp publish aggregation in the root build (it is currently deliberately excluded) and apply the existing `budget-breaker.publishing` convention plugin.
 - **D-15:** Demonstration via README only: add a Spring Boot section (dependency snippet, application.yml example, @Autowired usage, actuator/metrics output). No examples/ sample app this release.
+- **D-19:** Release quality bar before tagging v0.1.0, three layers: (1) `ApplicationContextRunner` unit tests for auto-config conditionals and properties binding, (2) one `@SpringBootTest` boot smoke test that hits `GET /actuator/budget` and asserts `gen_ai.*` metrics appear in the `MeterRegistry` after a tracked call, (3) a THROWAWAY demo app built outside the repo (or gitignored scratch dir) against a `publishToMavenLocal` artifact, verifying actuator + metrics end-to-end, then discarded. D-15 stands — nothing new ships in the repo.
 
 ### Claude's Discretion
 - `CallTracked` events don't carry the model name; the metrics collector needs {agent, model} tags. Either resolve model from the agent's AgentBudget at collection time or add `model` to `CallTracked` — planner/executor's call.
@@ -99,6 +106,7 @@ Scope = SPRING-01, SPRING-02, SPRING-03, REL-01 (starter portion). Note: core `i
 <deferred>
 ## Deferred Ideas
 
+- Per-agent budget overrides in application.yml (`budget-breaker.agents.<id>.*` map) — global-only knobs this release (D-16); revisit v0.2.0.
 - `on-soft-limit` / `on-hard-limit` behavior enums incl. PAUSE — needs core pause support; revisit v0.2.0.
 - `alert-webhook` (Slack notification on breach) — adds HTTP client + retry semantics; revisit after starter ships.
 - examples/ runnable sample app — useful for the r/kotlin launch post, not release-blocking.

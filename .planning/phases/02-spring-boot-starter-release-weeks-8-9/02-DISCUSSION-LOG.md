@@ -145,3 +145,76 @@
 - alert-webhook Slack notifications
 - examples/ sample app (for the launch post)
 - SDK interceptors, Kafka opt-in — existing backlog issues #3–#6, #8
+
+---
+
+# Session 2 — 2026-06-12 (context update)
+
+**Areas discussed:** Per-agent budget config, Injected bean surface, Release quality bar, Decision review (D-01–D-15)
+
+---
+
+## Per-agent budget config
+
+| Option | Description | Selected |
+|--------|-------------|----------|
+| Global only | Keep D-02 as-is; per-agent budgets stay code-side via withBudget(budget = ...); agents map can come in v0.2.0 without breaking | ✓ |
+| Add agents map | budget-breaker.agents.<id>.{soft,hard,model} resolved by auto-config; needs resolver hook into core call path | |
+| You decide | Planner's judgment based on implementation cost | |
+
+**User's choice:** Global only (→ D-16)
+
+---
+
+## Injected bean surface
+
+| Option | Description | Selected |
+|--------|-------------|----------|
+| Single breaker bean | One @Bean BudgetCircuitBreaker from properties, @ConditionalOnMissingBean; properties internal | ✓ |
+| Breaker + properties bean | Also document injecting BudgetBreakerProperties | |
+| Breaker + DSL helper | Additional Kotlin convenience wrapper | |
+
+**User's choice:** Single breaker bean (→ D-17)
+
+| Option | Description | Selected |
+|--------|-------------|----------|
+| Events Flow only | Apps collect breaker.events for custom reactions; callback users replace the bean | ✓ |
+| Optional callback bean | Auto-config picks up user (BudgetReport) -> Unit bean as onSoftLimit | |
+| You decide | Whichever keeps auto-config simplest | |
+
+**User's choice:** Events Flow only (→ D-18)
+
+---
+
+## Release quality bar
+
+| Option | Description | Selected |
+|--------|-------------|----------|
+| Boot smoke test | ApplicationContextRunner units + one @SpringBootTest hitting /actuator/budget + MeterRegistry assertion | |
+| Unit-level only | ApplicationContextRunner + plain unit tests; README manual verification | |
+| Full sample-app verification | Additionally verify a demo app against a published artifact before tagging | ✓ |
+
+**User's choice:** Full sample-app verification
+
+| Option | Description | Selected |
+|--------|-------------|----------|
+| Throwaway, D-15 stands | Demo built outside repo (or gitignored) against mavenLocal artifact, verified, discarded | ✓ |
+| Keep it — revise D-15 | Commit as examples/demo-app excluded from publishing | |
+| Keep it outside the repo | Separate UnityInFlow/budget-breaker-demo repo | |
+
+**User's choice:** Throwaway, D-15 stands (→ D-19)
+
+---
+
+## Decision review (D-01–D-15)
+
+| Group | Decision |
+|-------|----------|
+| Config properties (D-01–D-04) | Keep as-is |
+| Actuator (D-05–D-08) | Keep as-is |
+| Metrics (D-09–D-11) | Keep as-is |
+| Release (D-12–D-15) | Keep as-is |
+
+## Deferred Ideas (session 2)
+
+- Per-agent budget overrides in application.yml (budget-breaker.agents.<id>.*) — v0.2.0
