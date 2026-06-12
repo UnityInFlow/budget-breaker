@@ -14,7 +14,7 @@
 Plans:
 **Wave 1**
 
-- [ ] 02-01-PLAN.md — Core D-08 live-snapshot + aggregate-breach enhancement, CallTracked.model, starter build setup (Wave 1)
+- [x] 02-01-PLAN.md — Core D-08 live-snapshot + aggregate-breach enhancement, CallTracked.model, starter build setup (Wave 1) ✅ 2026-06-12
 
 **Wave 2** *(blocked on Wave 1 completion)*
 

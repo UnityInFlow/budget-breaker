@@ -3,6 +3,7 @@
   "workspace": "05-budget-breaker",
   "workflow": {
     "discuss_mode": "discuss",
-    "text_mode": false
+    "text_mode": false,
+    "_auto_chain_active": false
   }
 }

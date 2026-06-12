@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: Ready to execute
-last_updated: "2026-06-12T12:05:58.519Z"
+status: Executing Phase 02
+last_updated: "2026-06-12T13:00:00.000Z"
 progress:
   total_phases: 3
   completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
-  percent: 0
+  total_plans: 4
+  completed_plans: 1
+  percent: 25
 ---
 
 # State: budget-breaker
@@ -18,7 +18,7 @@ progress:
 
 See: .planning/PROJECT.md (updated 2026-04-02)
 **Core value:** Stop agent cost overruns with reactive budget enforcement
-**Current focus:** v0.0.1 live on Maven Central (2026-05-11). Phase 2 remaining scope: Spring Boot starter + integrations.
+**Current focus:** Phase 02 — spring-boot-starter-release-weeks-8-9
 
 ## Phase 1 — Core Library (COMPLETE)
 
@@ -61,8 +61,17 @@ See: .planning/PROJECT.md (updated 2026-04-02)
 
 Remaining Phase 2 scope: Spring Boot starter + integrations (#3–#6, #8).
 
+## Decisions
+
+- `CallTracked.model` appended as last constructor parameter (additive, no break)
+- `activeTrackers.remove()` called first in `finally` block (never double-visible as running + completed)
+- `getAllReports()` overlays in-flight trackers over completed reports for full-picture snapshot
+- `compileOnly` for Spring/Micrometer in starter (consumers bring own managed version)
+- No `kapt` in starter (optional; JVM-24 risk per RESEARCH Pitfall 4)
+
 ## Session Notes
 
+- 2026-06-12: Phase 02, Plan 01 complete. Core D-08 enhancement (BudgetSnapshot, live-snapshot APIs), CallTracked.model field, starter build.gradle.kts wired.
 - 2026-05-11: Sonatype/Maven Central publishing infra added; v0.0.1 published as `io.github.unityinflow:budget-breaker:0.0.1` (issue #7 closed).
 - 2026-04-02: Harness engineering setup complete. Ready for GSD discuss-phase 1.
 - 2026-04-01: Phase 1 complete. All core classes implemented, tests passing, v0.0.1 tagged and released.
