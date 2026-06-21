@@ -1,10 +1,18 @@
 plugins {
     kotlin("jvm")
+    // kapt runs the Spring Boot configuration processor (a Java annotation processor) against the
+    // Kotlin @ConfigurationProperties class — KSP cannot run it (D-02, STARTER-03).
+    kotlin("kapt")
     id("budget-breaker.publishing")
 }
 
 dependencies {
     api(project(":budget-breaker"))
+
+    // Generates META-INF/spring-configuration-metadata.json from BudgetBreakerProperties for IDE
+    // hints. In the `kapt` configuration ONLY (build-only annotation-processor path) so it never
+    // enters compileClasspath/runtimeClasspath or the published POM (D-02, STARTER-04 leak rule).
+    kapt("org.springframework.boot:spring-boot-configuration-processor:3.5.3")
 
     // kotlinx-coroutines is needed directly: the core module uses `implementation` (not `api`),
     // so coroutines are not exposed transitively to the starter compile classpath.
