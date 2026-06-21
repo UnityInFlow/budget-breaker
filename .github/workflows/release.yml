@@ -7,7 +7,10 @@ on:
 
 jobs:
   publish:
-    runs-on: [arc-runner-unityinflow]
+    # Temporary: Hetzner arc-runner-unityinflow (X64) fleet offline for the 0.1.0 release;
+    # JVM/Maven-Central artifacts are architecture-independent, so publish on the online
+    # ARM64 orangepi runner. Revert to [arc-runner-unityinflow] once the X64 fleet is back.
+    runs-on: [orangepi]
     permissions:
       contents: write
     steps:
