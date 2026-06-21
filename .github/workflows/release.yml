@@ -41,6 +41,58 @@ jobs:
       - name: Lint + build + unit tests
         run: ./gradlew clean build --no-configuration-cache
 
+      # ---------------------------------------------------------------------------
+      # Pre-publish assertion gates (verify-before-tag). Maven Central releases are
+      # immutable (RESEARCH Pitfall 5), so the complete signed bundle is proven
+      # correct here BEFORE the irreversible Publish step below.
+      # ---------------------------------------------------------------------------
+
+      # STARTER-05: the javadoc jar must exist and contain real Dokka-rendered docs
+      # (not the old empty placeholder). `build` does not produce the publication's
+      # javadoc jar, so build it explicitly first.
+      - name: Gate — Dokka javadoc jar present and non-empty
+        run: |
+          ./gradlew :budget-breaker-spring-boot-starter:dokkaJavadocJar --no-configuration-cache
+          JAVADOC_JAR=$(ls budget-breaker-spring-boot-starter/build/libs/*-javadoc.jar 2>/dev/null | head -1)
+          if [ -z "$JAVADOC_JAR" ]; then
+            echo "No -javadoc.jar produced for the starter module" >&2
+            exit 1
+          fi
+          RENDERED=$(unzip -l "$JAVADOC_JAR" | grep -Ec '\.(html|js|css)$')
+          if [ "$RENDERED" -eq 0 ]; then
+            echo "Javadoc jar $JAVADOC_JAR contains no rendered docs (empty placeholder)" >&2
+            exit 1
+          fi
+          echo "Javadoc jar OK: $JAVADOC_JAR ($RENDERED rendered files)"
+
+      # STARTER-03: the starter jar must carry the generated config metadata.
+      - name: Gate — spring-configuration-metadata.json present in starter jar
+        run: |
+          MAIN_JAR=$(ls budget-breaker-spring-boot-starter/build/libs/*.jar | grep -vE '\-(sources|javadoc)\.jar$' | head -1)
+          if [ -z "$MAIN_JAR" ]; then
+            echo "No main starter jar produced" >&2
+            exit 1
+          fi
+          if ! unzip -l "$MAIN_JAR" | grep -q 'META-INF/spring-configuration-metadata.json'; then
+            echo "Starter jar $MAIN_JAR is missing META-INF/spring-configuration-metadata.json" >&2
+            exit 1
+          fi
+          echo "Config metadata OK in $MAIN_JAR"
+
+      # STARTER-04: build-only deps must not leak into the consumer's runtime classpath /
+      # published POM. Fail if any forbidden coordinate appears on runtimeClasspath.
+      - name: Gate — POM cleanliness (no Kafka / leaked framework / config-processor)
+        run: |
+          DEPS=$(./gradlew :budget-breaker-spring-boot-starter:dependencies \
+            --configuration runtimeClasspath --no-configuration-cache)
+          LEAK=$(echo "$DEPS" | grep -Ei 'kafka|spring-boot-autoconfigure|spring-boot-actuator-autoconfigure|micrometer|configuration-processor' || true)
+          if [ -n "$LEAK" ]; then
+            echo "Forbidden build-only dependency leaked into runtimeClasspath:" >&2
+            echo "$LEAK" >&2
+            exit 1
+          fi
+          echo "POM cleanliness OK — no Kafka / leaked framework / config-processor on runtimeClasspath"
+
       - name: Publish aggregated bundle to Sonatype Central Portal
         env:
           SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
