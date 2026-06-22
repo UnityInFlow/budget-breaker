@@ -33,6 +33,10 @@ dependencies {
     // SimpleMeterRegistry lives in micrometer-core (the starter declares it compileOnly, so the
     // consumer must bring its own MeterRegistry implementation, as a real Spring Boot app would).
     testImplementation("io.micrometer:micrometer-core:1.15.0")
+    // Gradle 9.0 removed automatic JUnit Platform launcher injection; without this the test
+    // executor cannot start ("Failed to load JUnit Platform"). Required on the test runtime
+    // classpath under Gradle 9.4.1.
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
 tasks.test {
