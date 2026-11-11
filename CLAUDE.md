@@ -87,15 +87,18 @@ Superpowers skills (TDD, code review, debugging) activate automatically during e
 
 ---
 
-## CI / Self-Hosted Runners
+## CI / Runners
 
-Use UnityInFlow org-level self-hosted runners. Never use `ubuntu-latest`.
+This repo is public. The org runner group does not allow public repositories
+(`allows_public_repositories: false`), so CI runs on GitHub-hosted runners (free for public repos):
 
 ```yaml
-runs-on: [arc-runner-unityinflow]
+runs-on: ubuntu-24.04
 ```
 
-Available runners: `hetzner-runner-1/2/3` (X64), `orangepi-runner` (ARM64).
+Use the fixed image label, not `ubuntu-latest`. The org requires every `uses:` to be pinned to a full
+commit SHA with a `# vX.Y.Z` comment, and only allow-listed actions run. The former self-hosted labels
+`arc-runner-unityinflow` and `orangepi` have no runner any more; do not use them.
 
 ---
 
